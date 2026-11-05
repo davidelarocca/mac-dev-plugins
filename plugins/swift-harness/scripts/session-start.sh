@@ -52,5 +52,8 @@ fi
 
 if [ "${#missing[@]}" -gt 0 ]; then
   echo "swift-harness: not installed: ${missing[*]}. Those checks are skipped. Install with: brew install ${missing[*]}"
+  if [ "$(sh_cfg '.lintBlocking' 'false')" = "true" ] && [[ " ${missing[*]} " == *" swiftlint "* ]]; then
+    echo "swift-harness: lintBlocking is on, so the end-of-turn check fails after code changes until SwiftLint is installed."
+  fi
 fi
 exit 0

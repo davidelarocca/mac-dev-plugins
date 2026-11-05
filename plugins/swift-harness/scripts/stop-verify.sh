@@ -13,14 +13,19 @@ state="$(sh_state_dir)" || exit 0
 
 verify_enabled="$(sh_cfg '.verify.enabled' 'true')"
 lint_gate=false
-[ "$(sh_cfg '.lintBlocking' 'false')" = "true" ] && [ -s "$state/lint-pending" ] && lint_gate=true
-[ "$verify_enabled" = "true" ] || [ "$lint_gate" = "true" ] || exit 0
+lint_missing=false
+if [ "$(sh_cfg '.lintBlocking' 'false')" = "true" ] && [ "$(sh_cfg '.lint' 'swiftlint')" = "swiftlint" ]; then
+  [ -s "$state/lint-pending" ] && lint_gate=true
+  # Strict mode: edits that could not be linted are not a passing lint (#17).
+  command -v swiftlint >/dev/null 2>&1 || lint_missing=true
+fi
+[ "$verify_enabled" = "true" ] || [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ] || exit 0
 
 command_line="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
 max_attempts="$(sh_cfg '.verify.maxAttempts' '3')"
 checks=""
 [ "$verify_enabled" = "true" ] && checks="$command_line"
-[ "$lint_gate" = "true" ] && checks="${checks:+$checks + }SwiftLint (lintBlocking)"
+{ [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ]; } && checks="${checks:+$checks + }SwiftLint (lintBlocking)"
 
 fp="$(sh_fingerprint)"
 [ "$fp" = "$(cat "$state/passed" 2>/dev/null)" ] && exit 0
@@ -76,7 +81,10 @@ if [ "$verify_enabled" = "true" ]; then
   (cd "$SH_ROOT" && bash -c "$command_line") >"$out" 2>&1
   status=$?
 fi
-if [ "$lint_gate" = "true" ]; then
+if [ "$lint_missing" = "true" ]; then
+  printf '\n== SwiftLint (lintBlocking) ==\nSwiftLint is not installed, but lintBlocking is on: the Swift files changed in this session were not linted. Tell the user to install it (brew install swiftlint) or to turn lintBlocking off; do not try to work around it.\n' >>"$out"
+  [ "$status" -ne 0 ] || status=1
+elif [ "$lint_gate" = "true" ]; then
   printf '\n== SwiftLint (lintBlocking) ==\n' >>"$out"
   recheck_lint >>"$out" || { [ "$status" -ne 0 ] || status=1; }
 fi

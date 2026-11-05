@@ -368,6 +368,42 @@ echo 'let app = x!' >"$P/Sources/App.swift"
 FAKE_LINT=error post_edit "$P" "$P/Sources/App.swift" >/dev/null
 expect_result "stop: without lintBlocking, lint errors do not block the stop" 0 '^exit=0' "$(FAKE_LINT=error FAKE_VERIFY_EXIT=0 gate_stop "$P")"
 
+# ---------- lintBlocking without SwiftLint (#17) ----------
+
+# A machine without SwiftLint: minimal PATH and no Homebrew fallback.
+nolint_stop() { # $1 project
+  local out code
+  out="$(jq -nc --arg cwd "$1" '{cwd: $cwd, session_id: "test"}' |
+    PATH="$NOLINT:/usr/bin:/bin" SWIFT_HARNESS_EXTRA_PATH='' FAKE_VERIFY_LOG="$TMP/nolint.log" FAKE_VERIFY_EXIT=0 \
+      CLAUDE_PLUGIN_DATA="$TMP/data" CLAUDE_PROJECT_DIR="$1" "$SCRIPTS/stop-verify.sh" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+
+P="$(new_project nolint-strict)"
+set_config "$P" '{"format":"none","lint":"swiftlint","lintBlocking":true,"verify":{"command":"scripts/verify.sh fast"}}'
+git -C "$P" commit -qam "lintBlocking on"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let app = 7' >"$P/Sources/App.swift"
+expect_result "stop: lintBlocking with SwiftLint missing fails even when the build passes" 2 'SwiftLint is not installed' "$(nolint_stop "$P")"
+out="$(jq -nc --arg cwd "$P" '{cwd: $cwd, source: "resume"}' | PATH="$NOLINT:/usr/bin:/bin" SWIFT_HARNESS_EXTRA_PATH='' CLAUDE_PLUGIN_DATA="$TMP/data" CLAUDE_PROJECT_DIR="$P" "$SCRIPTS/session-start.sh")"
+if grep -q 'end-of-turn check fails' <<<"$out"; then ok "session-start: lintBlocking without SwiftLint says the check will fail"
+else nok "session-start: lintBlocking without SwiftLint says the check will fail" "${out:-<empty>}"; fi
+
+P="$(new_project nolint-report)"
+set_config "$P" '{"format":"none","lint":"swiftlint","lintBlocking":false,"verify":{"command":"scripts/verify.sh fast"}}'
+git -C "$P" commit -qam "report only"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let app = 7' >"$P/Sources/App.swift"
+expect_result "stop: without lintBlocking, missing SwiftLint does not block" 0 '^exit=0' "$(nolint_stop "$P")"
+
+P="$(new_project nolint-off)"
+set_config "$P" '{"format":"none","lint":"none","lintBlocking":true,"verify":{"command":"scripts/verify.sh fast"}}'
+git -C "$P" commit -qam "lint none"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let app = 7' >"$P/Sources/App.swift"
+expect_result "stop: lint set to none never requires SwiftLint" 0 '^exit=0' "$(nolint_stop "$P")"
+
 # ---------- worktrees ----------
 
 P="$(new_project wt-main)"

@@ -1,5 +1,10 @@
 # Changelog
 
+## swift-harness 1.1.3 (2026-11-05)
+
+- `lintBlocking`: strict mode now means strict ([#17](https://github.com/davidelarocca/swift-harness/issues/17)). If SwiftLint is not installed, the end-of-turn check fails after code changes, with a message telling Claude to ask the user to install it or turn `lintBlocking` off. Before, unlinted code could be recorded as passed. SessionStart says so up front. The usual `maxAttempts` limit still applies. No change without `lintBlocking`, or with `lint` set to `none`.
+- Smoke suite: new `lint-missing` scenario. In a real session Claude reported the setup problem and did not touch `.claude/swift-harness.json`.
+
 ## swift-harness 1.1.2 (2026-11-05)
 
 Verification fixes from an external engineering review. No configuration changes needed.
