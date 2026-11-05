@@ -391,6 +391,48 @@ wt_resume="$(hook session-start.sh "$W" '{"source":"resume"}')"
 if grep -qi failed <<<"$wt_resume"; then ok "worktrees: each worktree keeps its own failure state"
 else nok "worktrees: each worktree keeps its own failure state" "${wt_resume:-<empty>}"; fi
 
+# ---------- lintBlocking pending files at session start ----------
+
+P="$(new_project pending-at-start)"
+set_config "$P" '{"format":"none","lint":"swiftlint","lintBlocking":true}'
+git -C "$P" commit -qam "lintBlocking on"
+echo 'let app = x!' >"$P/Sources/App.swift"
+FAKE_LINT=error post_edit "$P" "$P/Sources/App.swift" >/dev/null
+out="$(hook session-start.sh "$P" '{"source":"resume"}')"
+if grep -q 'Sources/App.swift' <<<"$out" && grep -qi 'swiftlint' <<<"$out"; then
+  ok "session-start: lintBlocking files that still fail SwiftLint are reported"
+else
+  nok "session-start: lintBlocking files that still fail SwiftLint are reported" "${out:-<empty>}"
+fi
+set_config "$P" '{"format":"none","lint":"swiftlint","lintBlocking":false}'
+out="$(hook session-start.sh "$P" '{"source":"resume"}')"
+if ! grep -q 'Sources/App.swift' <<<"$out"; then ok "session-start: pending files are not reported without lintBlocking"
+else nok "session-start: pending files are not reported without lintBlocking" "$out"; fi
+
+# ---------- design-system fixture assets ----------
+
+# Every Color("name", bundle: .module) in the reference Tokens.swift must exist as
+# name.colorset in the fixture, with numeric color components.
+REFS="$PLUGIN/skills/design-system/references/Tokens.swift"
+ASSETS="$HERE/fixtures/design-system/Sources/DesignSystem/Resources/Colors.xcassets"
+missing=""
+for name in $(grep -oE 'Color\("[A-Za-z]+", bundle: \.module\)' "$REFS" | sed -E 's/Color\("([A-Za-z]+)".*/\1/'); do
+  set_file="$ASSETS/$name.colorset/Contents.json"
+  if [ ! -f "$set_file" ]; then
+    missing="$missing $name(missing)"
+  elif ! jq -e '[.colors[].color.components | .red, .green, .blue, .alpha | tonumber] | length > 0' "$set_file" >/dev/null 2>&1; then
+    missing="$missing $name(invalid components)"
+  fi
+done
+if [ -z "$missing" ] && [ -n "$(grep -oE 'Color\("[A-Za-z]+", bundle' "$REFS")" ]; then
+  ok "fixture: every color referenced by Tokens.swift exists with numeric components"
+else
+  nok "fixture: every color referenced by Tokens.swift exists with numeric components" "$missing"
+fi
+unexpected="$(cd "$ASSETS" && ls -d *.colorset 2>/dev/null | grep -vE '^[A-Za-z]+\.colorset$')"
+if [ -z "$unexpected" ]; then ok "fixture: colorset folder names are plain semantic names"
+else nok "fixture: colorset folder names are plain semantic names" "$unexpected"; fi
+
 # ---------- swift-format configuration ----------
 
 P="$(new_project swift-format-config)"
@@ -419,7 +461,8 @@ FAKES="$TMP/fakes"
 mkdir -p "$FAKES"
 printf '#!/bin/bash\nexit "${FAKE_XCODEBUILD_EXIT:-0}"\n' >"$FAKES/xcodebuild"
 printf '#!/bin/bash\nexit "${FAKE_SWIFT_EXIT:-0}"\n' >"$FAKES/swift"
-chmod +x "$FAKES/xcodebuild" "$FAKES/swift"
+printf '#!/bin/bash\nexit "${FAKE_SWIFTLINT_EXIT:-0}"\n' >"$FAKES/swiftlint"
+chmod +x "$FAKES/xcodebuild" "$FAKES/swift" "$FAKES/swiftlint"
 
 # $1 name, $2 container flag, $3 scheme, $4 packages (bash array body). Prints the project dir.
 verify_project() {
@@ -473,6 +516,13 @@ expect_verify "verify.sh: unknown mode is rejected" 1 'fsat' "$(run_verify "$V" 
 
 V="$(verify_project raw RAW '' '')"
 expect_verify "verify.sh: unfilled template placeholders are reported" 1 'placeholder' "$(run_verify "$V")"
+
+V="$(verify_project full-lint-only '' '' '')"
+expect_verify "verify.sh full: SwiftLint alone is not a verification" 1 'NOT CONFIGURED' "$(run_verify "$V" full)"
+
+V="$(verify_project full-scheme '-project App.xcodeproj' App '')"
+expect_verify "verify.sh full: tests plus lint pass" 0 'verify full: PASS' "$(run_verify "$V" full)"
+expect_verify "verify.sh full: failing lint fails" 1 'verify full: FAIL' "$(FAKE_SWIFTLINT_EXIT=2 run_verify "$V" full)"
 
 # ---------- summary ----------
 

@@ -145,6 +145,11 @@ brew install jq swiftlint swiftformat
 /plugin install swift-lsp@claude-plugins-official   # recommended: type diagnostics after every edit
 ```
 
+On Claude Code 2.1.275 or later, the first two lines can be one: `/plugin install swift-harness --marketplace davidelarocca/swift-harness`.
+
+> [!IMPORTANT]
+> Use swift-harness on projects you trust. Until v1.2.0 ([#6](https://github.com/davidelarocca/swift-harness/issues/6)), the end-of-turn check runs the verify command configured in the project without asking first. See [SECURITY.md](SECURITY.md).
+
 **Use:**
 
 1. Open your project in Claude Code and commit any pending work.
