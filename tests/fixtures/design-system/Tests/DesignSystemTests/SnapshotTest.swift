@@ -1,0 +1,1 @@
+../../../../../plugins/swift-harness/skills/design-system/references/SnapshotTest.swift
