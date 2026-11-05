@@ -116,7 +116,7 @@ They start as warnings, which double as the migration to-do list. Switch a rule 
 A quality tool has to be checked itself. Every release goes through:
 
 - **77 automated checks** of the hooks and templates (`tests/run.sh`), run in CI with macOS `/bin/bash` 3.2, plus ShellCheck and a build of the Swift reference files.
-- **A smoke test in real Claude Code sessions** (`tests/smoke/`): 7 scenarios with their invariants checked automatically. Last run: 21/21 invariants passed.
+- **A smoke test in real Claude Code sessions** (`tests/smoke/`): 8 scenarios with their invariants checked automatically. Latest runs: 25/25 invariants passed ([results](tests/smoke/RESULTS.md)).
 
 What Claude did in those sessions:
 
@@ -180,7 +180,7 @@ On Claude Code 2.1.275 or later, the first two lines can be one: `/plugin instal
 |---|---|---|
 | `format` | `swiftformat`, `swift-format` (needs a `.swift-format` file, see below), `none` | `swiftformat` |
 | `lint` | `swiftlint`, `none` | `swiftlint` |
-| `lintBlocking` | `true` blocks Claude on SwiftLint errors and on SwiftLint failing to run or reporting an invalid configuration, and re-checks those files at the end of the turn; `false` only reports | `false` |
+| `lintBlocking` | `true` blocks Claude on SwiftLint errors and on SwiftLint failing to run or reporting an invalid configuration, and re-checks those files at the end of the turn. If SwiftLint is not installed, the end-of-turn check fails after code changes instead of counting unlinted code as passing. `false` only reports | `false` |
 | `verify.enabled` | run the Stop check | `true` |
 | `verify.command` | any shell command, exit 0 means pass | `scripts/verify.sh fast` |
 | `verify.maxAttempts` | consecutive failures before Claude may stop | `3` |
