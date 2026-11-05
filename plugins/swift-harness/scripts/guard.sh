@@ -25,7 +25,10 @@ if [ -z "$reason" ] && [ -n "$rel" ]; then
     [[ "$protected" == *"{{"* ]] && continue
     protected="${protected#./}"
     protected="${protected%/}"
-    if [ "$rel" = "$protected" ] || [[ "$rel" == "$protected"/* ]]; then
+    # A protected entry may itself be a symlink: match its real target as well.
+    target="$(sh_relpath "$SH_ROOT/$protected")"
+    if [ "$rel" = "$protected" ] || [[ "$rel" == "$protected"/* ]] ||
+      { [ -n "$target" ] && { [ "$rel" = "$target" ] || [[ "$rel" == "$target"/* ]]; }; }; then
       reason="swift-harness: $protected is a protected area. Approve only if this change was explicitly requested and planned."
       break
     fi
