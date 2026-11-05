@@ -3,6 +3,7 @@
 #   scripts/verify.sh fast   -> run before a turn ends (Stop hook). Keep it under ~2 minutes.
 #   scripts/verify.sh full   -> run before merging a branch.
 # Exit code 0 = pass, anything else = fail. Errors go to stdout/stderr for Claude to read.
+# It never reports PASS without running at least one build or test.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -11,15 +12,27 @@ MODE="${1:-fast}"
 
 # ---- Project settings (filled by setup, edit freely) ----
 XCODE_CONTAINER="{{XCODE_CONTAINER_FLAG}}"   # e.g. -project MyApp.xcodeproj or -workspace MyApp.xcworkspace
-SCHEME="{{SCHEME}}"
-PACKAGES=({{LOCAL_PACKAGES}})                  # e.g. ("Packages/DesignSystem" "Packages/Domain")
+SCHEME="{{SCHEME}}"                          # empty if the project is packages only
+PACKAGES=({{LOCAL_PACKAGES}})                  # e.g. ("Packages/DesignSystem" "Packages/Domain"), or () for none
 # Separate DerivedData so command-line builds never fight with an open Xcode for the build database.
 DERIVED_DATA=".build/DerivedData"
 # SwiftLint baseline: set to the file path once created, so only new violations count.
 LINT_BASELINE=""
 # ---------------------------------------------------------
 
+case "$MODE" in
+  fast | full) ;;
+  *) printf 'verify: unknown mode "%s". Use fast or full.\n' "$MODE"; exit 2 ;;
+esac
+
+if [[ "$XCODE_CONTAINER$SCHEME" == *"{{"* ]] || [[ "${PACKAGES[*]-}" == *"{{"* ]]; then
+  printf 'verify: NOT CONFIGURED. scripts/verify.sh still contains {{...}} placeholders: fill in the project settings at the top.\n'
+  exit 2
+fi
+
 fail=0
+ran=0
+skipped=""
 
 step() { printf '\n== %s ==\n' "$1"; }
 
@@ -35,35 +48,58 @@ run_xcodebuild() {
   return "${PIPESTATUS[0]}"
 }
 
-for pkg in "${PACKAGES[@]}"; do
-  [ -d "$pkg" ] || continue
+# ${PACKAGES[@]+...} keeps an empty list working under set -u in macOS bash 3.2.
+for pkg in ${PACKAGES[@]+"${PACKAGES[@]}"}; do
   step "swift test: $pkg"
+  if [ ! -d "$pkg" ]; then
+    printf 'package folder not found: %s (fix PACKAGES in scripts/verify.sh)\n' "$pkg"
+    fail=1
+    continue
+  fi
+  ran=$((ran + 1))
   swift test --package-path "$pkg" 2>&1 | tail -40
   [ "${PIPESTATUS[0]}" -eq 0 ] || fail=1
 done
 
 if [ -n "$SCHEME" ]; then
-  if [ "$MODE" = "full" ]; then
+  if ! command -v xcodebuild >/dev/null 2>&1; then
+    step "xcodebuild ($SCHEME)"
+    printf 'xcodebuild not found: install Xcode or run xcode-select.\n'
+    fail=1
+  elif [ "$MODE" = "full" ]; then
     step "xcodebuild test ($SCHEME)"
+    ran=$((ran + 1))
     run_xcodebuild test || fail=1
   else
     step "xcodebuild build ($SCHEME)"
+    ran=$((ran + 1))
     run_xcodebuild build || fail=1
   fi
 fi
 
-if [ "$MODE" = "full" ] && command -v swiftlint >/dev/null 2>&1; then
-  step "swiftlint (strict)"
-  if [ -n "$LINT_BASELINE" ]; then
-    swiftlint lint --quiet --strict --baseline "$LINT_BASELINE" || fail=1
+if [ "$MODE" = "full" ]; then
+  if command -v swiftlint >/dev/null 2>&1; then
+    step "swiftlint (strict)"
+    ran=$((ran + 1))
+    if [ -n "$LINT_BASELINE" ]; then
+      swiftlint lint --quiet --strict --baseline "$LINT_BASELINE" || fail=1
+    else
+      swiftlint lint --quiet --strict || fail=1
+    fi
   else
-    swiftlint lint --quiet --strict || fail=1
+    skipped="$skipped swiftlint(not-installed)"
   fi
 fi
 
-if [ "$fail" -eq 0 ]; then
-  printf '\nverify %s: PASS\n' "$MODE"
-else
+[ -z "$skipped" ] || printf '\nskipped:%s\n' "$skipped"
+
+if [ "$fail" -ne 0 ]; then
   printf '\nverify %s: FAIL\n' "$MODE"
+  exit 1
 fi
-exit "$fail"
+if [ "$ran" -eq 0 ]; then
+  printf '\nverify %s: NOT CONFIGURED. No scheme and no package to check: set SCHEME or PACKAGES in scripts/verify.sh.\n' "$MODE"
+  exit 2
+fi
+printf '\nverify %s: PASS (%s check(s))\n' "$MODE" "$ran"
+exit 0
