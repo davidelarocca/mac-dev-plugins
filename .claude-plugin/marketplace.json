@@ -1,0 +1,14 @@
+{
+  "name": "mac-dev-plugins",
+  "description": "Personal Claude Code plugins for native macOS development",
+  "owner": {
+    "name": "Davide"
+  },
+  "plugins": [
+    {
+      "name": "swift-harness",
+      "source": "./plugins/swift-harness",
+      "description": "Reuse-first design system workflow, project bootstrap, audits and automatic quality gates for Swift/SwiftUI macOS apps"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+#!/bin/bash
+# PreToolUse (Edit|Write|MultiEdit): ask the user before Claude edits project.pbxproj
+# or a protected path listed in .claude/swift-harness.json.
+
+. "$(dirname "$0")/lib.sh"
+sh_init || exit 0
+
+file="$(sh_in '.tool_input.file_path')"
+[ -n "$file" ] || exit 0
+rel="${file#"$SH_ROOT"/}"
+
+reason=""
+
+if [ "$(sh_cfg '.guardPbxproj' 'true')" = "true" ] && [[ "$rel" == *.pbxproj ]]; then
+  reason="swift-harness: direct edits to project.pbxproj corrupt projects easily. Prefer adding files on disk (synchronized folders) or a local Swift package. Approve only if this edit is intended."
+fi
+
+if [ -z "$reason" ]; then
+  while IFS= read -r protected; do
+    [ -n "$protected" ] || continue
+    [[ "$protected" == *"{{"* ]] && continue
+    protected="${protected%/}"
+    if [ "$rel" = "$protected" ] || [[ "$rel" == "$protected"/* ]]; then
+      reason="swift-harness: $protected is a protected area. Approve only if this change was explicitly requested and planned."
+      break
+    fi
+  done < <(jq -r '.protectedPaths[]? // empty' "$SH_CONFIG" 2>/dev/null)
+fi
+
+[ -n "$reason" ] || exit 0
+
+jq -n --arg reason "$reason" '{
+  hookSpecificOutput: {
+    hookEventName: "PreToolUse",
+    permissionDecision: "ask",
+    permissionDecisionReason: $reason
+  }
+}'
+exit 0
