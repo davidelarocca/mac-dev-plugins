@@ -8,6 +8,8 @@ sh_init || exit 0
 file="$(sh_in '.tool_input.file_path')"
 [[ "$file" == *.swift ]] || exit 0
 [ -f "$file" ] || exit 0
+rel="$(sh_relpath "$file")"
+rel="${rel:-$file}"
 
 notes=""
 
@@ -28,7 +30,7 @@ case "$formatter" in
 esac
 after="$(shasum "$file" | cut -d' ' -f1)"
 if [ "$before" != "$after" ]; then
-  notes="The formatter rewrote ${file#"$SH_ROOT"/}. Re-read it before editing it again."
+  notes="The formatter rewrote $rel. Re-read it before editing it again."
 fi
 
 # ---- Lint ----
@@ -39,10 +41,10 @@ if [ "$(sh_cfg '.lint' 'swiftlint')" = "swiftlint" ] && command -v swiftlint >/d
     count="$(printf '%s\n' "$lint_out" | grep -cE ': (warning|error):')"
     shown="$(printf '%s\n' "$lint_out" | sed "s|$SH_ROOT/||" | head -20)"
     if [ "$(sh_cfg '.lintBlocking' 'false')" = "true" ] && [ "$lint_status" -ne 0 ]; then
-      printf 'SwiftLint errors in %s:\n%s\nFix these before continuing.\n' "${file#"$SH_ROOT"/}" "$shown" >&2
+      printf 'SwiftLint errors in %s:\n%s\nFix these before continuing.\n' "$rel" "$shown" >&2
       exit 2
     fi
-    lint_note="SwiftLint: $count issue(s) in ${file#"$SH_ROOT"/}. Fix the ones on lines you wrote or changed; leave pre-existing ones unless the task covers them.
+    lint_note="SwiftLint: $count issue(s) in $rel. Fix the ones on lines you wrote or changed; leave pre-existing ones unless the task covers them.
 $shown"
     notes="${notes:+$notes
 }$lint_note"
