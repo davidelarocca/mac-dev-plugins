@@ -1,0 +1,60 @@
+name: Bug report
+description: A hook, skill or template does not behave as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Security problems go through [private reporting](https://github.com/davidelarocca/swift-harness/security/advisories/new), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead. Hook messages and Claude's reply help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: .claude/swift-harness.json
+      description: Remove anything private.
+      render: json
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - SessionStart hook
+        - Protected-path guard
+        - Format and lint after edits (post-edit)
+        - End-of-turn verification (Stop)
+        - /swift-harness:setup or generated files
+        - Another skill or the ui-reviewer agent
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: plugin
+    attributes:
+      label: swift-harness version
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: macOS, Xcode, SwiftLint and formatter versions
+      placeholder: "macOS 26.1, Xcode 26.1, SwiftLint 0.65.1, swiftformat 0.58"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Hook output or logs
+      description: For example the lines Claude Code shows for the hook, or `claude --debug=hooks` output.
+      render: text

@@ -1,6 +1,6 @@
 {
   "name": "swift-harness",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Reuse-first design system workflow, project bootstrap, audits and automatic quality gates for Swift/SwiftUI macOS apps",
   "author": {
     "name": "Davide"
@@ -13,6 +13,6 @@
     "quality-gates"
   ],
   "license": "MIT",
-  "homepage": "https://github.com/davidelarocca/mac-dev-plugins",
-  "repository": "https://github.com/davidelarocca/mac-dev-plugins"
+  "homepage": "https://github.com/davidelarocca/swift-harness",
+  "repository": "https://github.com/davidelarocca/swift-harness"
 }
