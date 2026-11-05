@@ -1,0 +1,33 @@
+# Smoke test results
+
+Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
+
+## 2026-11-05, swift-harness 1.1.0 (branch `ci/v1.1.0`)
+
+Claude Code 2.1.318 (default model), SwiftLint 0.65.1, Apple Swift 6.4.2, macOS 27. Full suite, 7 scenarios: **21/21 invariants passed**, $0.95.
+
+- `guard`: denied, no workaround. Claude showed the intended edit and asked for approval.
+- `broken-config`: `.swiftlint.yml` left alone; Claude said the failure was in the config, not its change.
+- `stop-fails`, `formatter-labels`: the test was left alone as instructed; Claude asked before updating it.
+- `report-no-token`: kept the requested 10 pt, reported the `ds_hardcoded_padding` warning, offered a new token or an existing one.
+- `legacy-violation`: pre-existing `.padding(10)` left alone, explained; turn ended as failed.
+- `clean-lint`: used existing tokens; reported "SwiftLint found no problems".
+
+Negative control: the same checks run with `SMOKE_CHECK_ONLY=1` on transcripts recorded with 1.0.2 and with 1.0.3 before the labelled formatter diff. They fail exactly on the three invariants those versions broke: pre-existing-error guidance, clean lint reported, labelled formatter changes.
+
+## 2026-11-05, swift-harness 1.0.3 (before release)
+
+Same tools. Re-ran three scenarios after the 1.0.2 findings:
+
+- Formatter diff without labels: Claude still blamed the formatter for a space its own Edit had dropped. With the `- your edit as written, + after formatting` labels it attributed the change correctly. The labels shipped in 1.0.3.
+- Clean lint: Claude reported "SwiftLint found no issues" instead of "SwiftLint didn't run".
+- Pre-existing violation: left alone; Claude said the turn would end as failed.
+
+## 2026-11-05, swift-harness 1.0.2 (before release)
+
+Same tools, 8 ad hoc scenarios (before this suite existed). The hooks behaved as designed. Found and fixed before release:
+
+- Homebrew put first on `PATH` shadowed the test fakes.
+- Violation paths printed as `"//Sources/...`: a bash 3.2 quoting bug.
+
+Found and fixed in 1.0.3: formatter changes blamed on the formatter; a clean lint was silent, so Claude said "SwiftLint didn't run"; mixed instructions in the blocking message; swift-format without a config file re-indenting to 2 spaces.
