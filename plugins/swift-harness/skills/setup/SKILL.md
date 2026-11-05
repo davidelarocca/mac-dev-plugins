@@ -55,6 +55,7 @@ For each template, if the target file does not exist, create it with placeholder
 | `docs/adr/0000-template.md` | `docs/adr/0000-template.md` |
 | `swiftlint.yml` | `.swiftlint.yml` |
 | `swiftformat` | `.swiftformat` (only if swiftformat was chosen) |
+| `swift-format` | `.swift-format` (only if swift-format was chosen; without it swift-format uses 2-space indentation and reformats every edited file) |
 | `verify.sh` | `scripts/verify.sh` (then `chmod +x`) |
 | `swift-harness.json` | `.claude/swift-harness.json` (this file switches the plugin hooks on for this project) |
 

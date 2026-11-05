@@ -2,12 +2,17 @@
 # Shared helpers for swift-harness hooks. Sourced, not executed.
 # Every hook is a no-op unless the project contains .claude/swift-harness.json.
 
-# GUI-launched sessions often miss Homebrew on PATH. Append it when missing, so tools that
-# are already on PATH keep their order (and the test suite's fake tools stay first).
-for sh_dir in /opt/homebrew/bin /usr/local/bin; do
+# GUI-launched sessions often miss Homebrew on PATH. Append these folders when missing, so
+# tools already on PATH keep their order. SWIFT_HARNESS_EXTRA_PATH overrides the list
+# (colon-separated, empty for none).
+sh_old_ifs="$IFS"
+IFS=:
+for sh_dir in ${SWIFT_HARNESS_EXTRA_PATH-/opt/homebrew/bin:/usr/local/bin}; do
+  [ -n "$sh_dir" ] || continue
   case ":$PATH:" in *":$sh_dir:"*) ;; *) PATH="$PATH:$sh_dir" ;; esac
 done
-unset sh_dir
+IFS="$sh_old_ifs"
+unset sh_dir sh_old_ifs
 export PATH
 
 SH_INPUT="$(cat)"
