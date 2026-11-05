@@ -429,7 +429,11 @@ if [ -z "$missing" ] && [ -n "$(grep -oE 'Color\("[A-Za-z]+", bundle' "$REFS")" 
 else
   nok "fixture: every color referenced by Tokens.swift exists with numeric components" "$missing"
 fi
-unexpected="$(cd "$ASSETS" && ls -d *.colorset 2>/dev/null | grep -vE '^[A-Za-z]+\.colorset$')"
+unexpected=""
+for set_dir in "$ASSETS"/*.colorset; do
+  set_name="$(basename "$set_dir")"
+  [[ "$set_name" =~ ^[A-Za-z]+\.colorset$ ]] || unexpected="$unexpected [$set_name]"
+done
 if [ -z "$unexpected" ]; then ok "fixture: colorset folder names are plain semantic names"
 else nok "fixture: colorset folder names are plain semantic names" "$unexpected"; fi
 
