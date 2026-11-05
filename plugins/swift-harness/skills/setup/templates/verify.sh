@@ -13,6 +13,7 @@ MODE="${1:-fast}"
 # ---- Project settings (filled by setup, edit freely) ----
 XCODE_CONTAINER="{{XCODE_CONTAINER_FLAG}}"   # e.g. -project MyApp.xcodeproj or -workspace MyApp.xcworkspace
 SCHEME="{{SCHEME}}"                          # empty if the project is packages only
+# shellcheck disable=SC1083 # {{LOCAL_PACKAGES}} is replaced by /swift-harness:setup
 PACKAGES=({{LOCAL_PACKAGES}})                  # e.g. ("Packages/DesignSystem" "Packages/Domain"), or () for none
 # Separate DerivedData so command-line builds never fight with an open Xcode for the build database.
 DERIVED_DATA=".build/DerivedData"
