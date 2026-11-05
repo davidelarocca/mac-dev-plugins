@@ -1,5 +1,18 @@
 # Changelog
 
+## swift-harness 1.1.0 (2026-11-05)
+
+Automated validation. The plugin's behaviour is unchanged.
+
+- CI (GitHub Actions) on every pull request and push to `main`:
+  - `tests/run.sh` on macOS with `/bin/bash` 3.2, the version the hooks must support;
+  - ShellCheck, `bash -n` and JSON validation of manifests and templates;
+  - a build of the design-system reference files with their tests;
+  - a check that the `.swift-format` template is accepted;
+  - `claude plugin validate`, informational for now.
+- `tests/fixtures/design-system`: SwiftPM package that compiles `Tokens.swift`, `PillCenter.swift` and `SnapshotTest.swift` straight from the skill's references, with swift-snapshot-testing pinned in `Package.resolved`. Snapshot tests are built, not run, because their baselines depend on the macOS version.
+- `tests/smoke/`: Claude Code smoke test. It runs 7 scenarios in real sessions and checks the harness invariants from the transcripts: hook results, permission denials, files that must not change. `SMOKE_CHECK_ONLY=1` re-checks existing transcripts without spending tokens. Results are recorded in `tests/smoke/RESULTS.md`.
+
 ## swift-harness 1.0.3 (2026-11-05)
 
 Clearer feedback to Claude, from the Claude Code smoke test of 1.0.2. No configuration changes needed.

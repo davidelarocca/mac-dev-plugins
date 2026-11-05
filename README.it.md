@@ -97,7 +97,7 @@ La tabella completa delle opzioni e delle regole SwiftLint è nel [README in ing
 
 ## Aggiornare
 
-Modifica il plugin, alza `version` in `plugins/swift-harness/.claude-plugin/plugin.json`, fai push e in Claude Code lancia `/plugin marketplace update mac-dev-plugins`. Prima del push lancia `tests/run.sh`: richiede solo bash, git e jq (`xcodebuild` e `swift` sono simulati). Per provare modifiche locali senza reinstallare: `claude --plugin-dir ./plugins/swift-harness`.
+Modifica il plugin, alza `version` in `plugins/swift-harness/.claude-plugin/plugin.json`, fai push e in Claude Code lancia `/plugin marketplace update mac-dev-plugins`. Prima del push lancia `tests/run.sh`: richiede solo bash, git e jq (`xcodebuild`, `swift` e i formatter sono simulati). La CI lo esegue su ogni pull request con la `/bin/bash` 3.2 di macOS, insieme a ShellCheck, alla validazione dei JSON e alla compilazione dei file Swift di riferimento. Prima di una release che cambia hook, messaggi o template, lancia anche lo [smoke test in Claude Code](tests/smoke/README.md) (`tests/smoke/run.sh`, circa 1 $). Per provare modifiche locali senza reinstallare: `claude --plugin-dir ./plugins/swift-harness`.
 
 ## Limiti
 
