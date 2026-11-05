@@ -1,0 +1,47 @@
+import SwiftUI
+
+// Values are examples. Tune them to the app, keep the names intent-based.
+
+public enum Spacing {
+    public static let xs: CGFloat = 4
+    public static let s: CGFloat = 8
+    public static let m: CGFloat = 12
+    public static let l: CGFloat = 16
+    public static let xl: CGFloat = 24
+    /// Space between major sections of a screen.
+    public static let section: CGFloat = 32
+}
+
+public enum Radius {
+    public static let control: CGFloat = 6
+    public static let card: CGFloat = 10
+    public static let window: CGFloat = 14
+}
+
+public enum Typography {
+    public static let body = Font.body
+    public static let caption = Font.caption
+    public static let sectionTitle = Font.title3.weight(.semibold)
+    public static let pillLabel = Font.callout.weight(.medium)
+    /// Monospaced digits for durations, bit depth and sample rate.
+    public static let technical = Font.caption.monospacedDigit()
+}
+
+public enum Motion {
+    public static let quick = Animation.snappy(duration: 0.15)
+    public static let standard = Animation.snappy(duration: 0.25)
+    public static let emphasized = Animation.spring(duration: 0.4, bounce: 0.2)
+}
+
+// Semantic colors live in Resources/Colors.xcassets with light and dark variants.
+// Usage: Color.DS.surface
+public extension Color {
+    enum DS {
+        public static let surface = Color("surface", bundle: .module)
+        public static let surfaceRaised = Color("surfaceRaised", bundle: .module)
+        public static let accentSoft = Color("accentSoft", bundle: .module)
+        public static let success = Color("success", bundle: .module)
+        public static let warning = Color("warning", bundle: .module)
+        public static let danger = Color("danger", bundle: .module)
+    }
+}

@@ -1,0 +1,12 @@
+{
+  "format": "swiftformat",
+  "lint": "swiftlint",
+  "lintBlocking": false,
+  "verify": {
+    "enabled": true,
+    "command": "scripts/verify.sh fast",
+    "maxAttempts": 3
+  },
+  "protectedPaths": ["{{PROTECTED_PATH}}"],
+  "guardPbxproj": true
+}
