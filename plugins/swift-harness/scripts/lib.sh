@@ -145,8 +145,7 @@ sh_swiftlint() {
   SH_LINT_OUTPUT="$(printf '%s\n' "$SH_LINT_OUTPUT" | grep -E ': (warning|error):' | head -20)"
   # Keep the prefix in a variable: bash 3.2 treats a literal "/" inside a quoted
   # ${var//pattern/} pattern as the separator.
-  local prefix="$SH_ROOT/"
-  SH_LINT_OUTPUT="${SH_LINT_OUTPUT//"$prefix"/}"
+  SH_LINT_OUTPUT="${SH_LINT_OUTPUT//"$SH_ROOT/"/}"
 
   if [ "$SH_LINT_STATUS" -ne 0 ] && grep -q 'No lintable files found' <<<"$SH_LINT_ERRORS"; then
     SH_LINT_RESULT=excluded
