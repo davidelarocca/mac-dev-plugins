@@ -134,6 +134,11 @@ brew install jq swiftlint swiftformat
 /plugin install swift-lsp@claude-plugins-official   # consigliato: diagnostica dei tipi dopo ogni modifica
 ```
 
+Da Claude Code 2.1.275 le prime due righe diventano una: `/plugin install swift-harness --marketplace davidelarocca/swift-harness`.
+
+> [!IMPORTANT]
+> Usa swift-harness su progetti di cui ti fidi. Fino alla v1.2.0 ([#6](https://github.com/davidelarocca/swift-harness/issues/6)) il controllo a fine turno esegue il comando di verifica configurato nel progetto senza chiedere prima. Vedi [SECURITY.md](SECURITY.md).
+
 **Uso:**
 
 1. Apri il progetto in Claude Code e fai commit del lavoro in sospeso.
@@ -176,6 +181,7 @@ Prossima tappa: **v1.2.0, fiducia e onboarding.** I comandi della repo girano so
 - **Il guard sui percorsi protetti non è una sandbox.** Copre solo i tool Edit, Write e MultiEdit; un comando shell eseguito via Bash può comunque modificare un file protetto. Per limiti rigidi usa le [regole di permesso](https://code.claude.com/docs/en/permissions) di Claude Code (`deny`).
 - I file Swift di riferimento della skill `design-system` sono esempi da adattare, non una libreria.
 - Gli snapshot test cambiano tra versioni di macOS: registrali ed eseguili sullo stesso sistema, e rigenerali dopo aggiornamenti importanti.
+- Con Xcode 26, `swift build` e `swift test` copiano il catalogo degli asset di un package senza compilarlo, quindi in quei test i colori del design system non si trovano. Esegui i test che dipendono dai colori con `xcodebuild test`; Xcode 27 compila il catalogo in ogni caso.
 - La verifica a fine turno gira sulla tua macchina e dura quanto la tua verifica veloce: tieni `fast` sotto i due minuti circa.
 
 ## Contribuire

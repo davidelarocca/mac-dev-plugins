@@ -145,6 +145,11 @@ brew install jq swiftlint swiftformat
 /plugin install swift-lsp@claude-plugins-official   # recommended: type diagnostics after every edit
 ```
 
+On Claude Code 2.1.275 or later, the first two lines can be one: `/plugin install swift-harness --marketplace davidelarocca/swift-harness`.
+
+> [!IMPORTANT]
+> Use swift-harness on projects you trust. Until v1.2.0 ([#6](https://github.com/davidelarocca/swift-harness/issues/6)), the end-of-turn check runs the verify command configured in the project without asking first. See [SECURITY.md](SECURITY.md).
+
 **Use:**
 
 1. Open your project in Claude Code and commit any pending work.
@@ -223,6 +228,7 @@ Next up: **v1.2.0, trust and onboarding.** Repository commands run only after yo
 - **The protected-path guard is not a sandbox.** It covers the Edit, Write and MultiEdit tools only; a shell command run through Bash can still change a protected file. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`).
 - The Swift reference files in the `design-system` skill are examples to adapt, not a library.
 - Snapshot tests render differently across macOS versions. Record and run them on the same OS, and re-record after major updates.
+- With Xcode 26, `swift build` and `swift test` copy a package's asset catalog without compiling it, so design-system colors do not resolve in those test runs. Run color-dependent tests with `xcodebuild test`; Xcode 27 compiles the catalog either way.
 - The Stop check runs on your machine and takes as long as your fast verification. Keep `fast` under about two minutes.
 
 ## Contributing

@@ -80,6 +80,16 @@ jobs:
         working-directory: tests/fixtures/design-system
         run: swift build --build-tests
 
+      # Color("name", bundle:) never fails when created: check every semantic color resolves.
+      # xcodebuild, not swift test: with Xcode 26 the SwiftPM CLI copies Colors.xcassets
+      # without compiling it, so no named color resolves (Xcode 27 compiles it).
+      - name: Semantic colors resolve at runtime
+        working-directory: tests/fixtures/design-system
+        run: |
+          xcodebuild test -scheme DesignSystem -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" -quiet \
+            -only-testing:'DesignSystemTests/semanticColorResolves(_:)'
+
       - name: swift-format template is accepted
         run: |
           tmp="$(mktemp -d)"
@@ -91,8 +101,8 @@ jobs:
   plugin-validate:
     name: claude plugin validate
     runs-on: ubuntu-latest
-    # Needs the Claude Code CLI from npm; informational until it has proven reliable in CI.
-    continue-on-error: true
+    # Uses the latest Claude Code CLI from npm, so validator changes show up here first.
+    # If a CLI release breaks this job without a real manifest problem, pin a version below.
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
