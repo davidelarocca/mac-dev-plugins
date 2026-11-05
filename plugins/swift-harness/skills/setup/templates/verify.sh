@@ -3,7 +3,8 @@
 #   scripts/verify.sh fast   -> run before a turn ends (Stop hook). Keep it under ~2 minutes.
 #   scripts/verify.sh full   -> run before merging a branch.
 # Exit code 0 = pass, anything else = fail. Errors go to stdout/stderr for Claude to read.
-# It never reports PASS without running at least one build or test.
+# It never reports PASS without running at least one build or test: SwiftLint is an extra
+# check, not a substitute.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -32,7 +33,8 @@ if [[ "$XCODE_CONTAINER$SCHEME" == *"{{"* ]] || [[ "${PACKAGES[*]-}" == *"{{"* ]
 fi
 
 fail=0
-ran=0
+ran=0      # builds and test runs
+linted=0   # SwiftLint runs (full mode), counted separately
 skipped=""
 
 step() { printf '\n== %s ==\n' "$1"; }
@@ -81,7 +83,7 @@ fi
 if [ "$MODE" = "full" ]; then
   if command -v swiftlint >/dev/null 2>&1; then
     step "swiftlint (strict)"
-    ran=$((ran + 1))
+    linted=1
     if [ -n "$LINT_BASELINE" ]; then
       swiftlint lint --quiet --strict --baseline "$LINT_BASELINE" || fail=1
     else
@@ -102,5 +104,5 @@ if [ "$ran" -eq 0 ]; then
   printf '\nverify %s: NOT CONFIGURED. No scheme and no package to check: set SCHEME or PACKAGES in scripts/verify.sh.\n' "$MODE"
   exit 2
 fi
-printf '\nverify %s: PASS (%s check(s))\n' "$MODE" "$ran"
+printf '\nverify %s: PASS (%s build/test check(s)%s)\n' "$MODE" "$ran" "$([ "$linted" -eq 0 ] || echo ' + SwiftLint')"
 exit 0

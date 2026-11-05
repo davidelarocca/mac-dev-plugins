@@ -59,6 +59,7 @@ See `references/SnapshotTest.swift`. Notes for macOS:
 
 - Render through `NSHostingView` with a fixed frame and an explicit appearance (`.aqua`, `.darkAqua`).
 - Rendering differs between macOS versions: record snapshots on the same OS the checks run on, and re-record after a major macOS update in a dedicated commit.
+- Run tests that need the package's colors with `xcodebuild test -scheme <Package> -destination 'platform=macOS'`. With Xcode 26 (Swift 6.3), `swift test` copies `Colors.xcassets` without compiling it, so `Color.DS.*` resolves to nothing and snapshots render without the real colors. Xcode 27 (Swift 6.4) compiles it.
 - Use a small `perceptualPrecision` tolerance (around 0.98) to avoid font antialiasing noise.
 
 ## Migration from an existing app
