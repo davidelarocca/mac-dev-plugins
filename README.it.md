@@ -25,19 +25,21 @@ swift-harness interviene su tre livelli:
 | Skill (automatica) | `feature` | Ciclo Discover, Plan, Implement, Verify, Record per ogni feature o step. |
 | Skill (automatica) | `adr` | Registra una decisione architetturale e la indicizza. |
 | Subagent | `ui-reviewer` | Review in sola lettura di un diff contro design system, registro e regole di architettura. |
-| Hook | SessionStart | Fissa lo stato di partenza del codice e segnala strumenti mancanti. |
-| Hook | PreToolUse | Chiede conferma prima di modificare `project.pbxproj` o un percorso protetto. |
+| Hook | SessionStart | Fissa lo stato di partenza del codice come riferimento (non come verificato), avvisa se l'ultima verifica è fallita sullo stesso codice e segnala strumenti mancanti. |
+| Hook | PreToolUse | Chiede conferma prima che Claude modifichi `project.pbxproj` o un percorso protetto con i tool Edit o Write. Non è una sandbox: vedi [Limiti](#limiti). |
 | Hook | PostToolUse | Formatta e controlla il file Swift appena modificato; i risultati tornano a Claude. |
-| Hook | Stop | Esegue la verifica veloce prima che Claude chiuda il turno, solo se il codice Swift è cambiato. |
+| Hook | Stop | Esegue la verifica veloce prima che Claude chiuda il turno, solo se sono cambiati input della build (codice Swift, impostazioni di progetto e build, risorse). |
 
 Gli hook sono **spenti in ogni progetto che non contiene `.claude/swift-harness.json`**: gli altri progetti non vengono toccati.
 
 ### Come si comporta il controllo a fine turno
 
-- Codice invariato dall'ultima verifica riuscita: non parte nulla.
+- Codice invariato dall'inizio della sessione o dall'ultima verifica riuscita: non parte nulla. Lo stato di partenza è un riferimento, non una verifica superata: se era già rotto, la prima modifica della sessione fa partire la verifica e lo mostra.
 - Codice cambiato e verifica fallita: Claude viene bloccato e riceve le ultime 60 righe dell'output.
 - Claude prova a fermarsi di nuovo senza modificare nulla: può fermarsi, e ricevi un avviso.
 - Dopo `maxAttempts` fallimenti consecutivi (default 3): si ferma e decidi tu.
+- "Cambiato" vale per ogni input della build: file Swift, `Package.resolved`, `.pbxproj`, `.xcconfig`, plist, entitlements, cataloghi di asset e stringhe, cartelle `Resources/`, snapshot di riferimento, `scripts/`, configurazione di lint e dell'harness. `.build` e DerivedData sono ignorati.
+- Un fallimento sopravvive a una nuova sessione: all'avvio o al resume Claude viene avvisato se l'ultima verifica è fallita sul codice attuale.
 - Funziona per worktree, quindi agenti paralleli verificano ciascuno la propria copia.
 
 ## Requisiti
@@ -85,13 +87,21 @@ In Claude Code:
 - `format`: `swiftformat`, `swift-format` (quello di Apple, incluso in Xcode) o `none`.
 - `lintBlocking`: `true` blocca Claude sugli errori SwiftLint invece di passargli solo il report. Da attivare a migrazione finita.
 - `verify.command`: qualsiasi comando; codice di uscita 0 significa verifica superata.
-- `protectedPaths`: prefissi relativi alla radice del repository.
+- `protectedPaths`: prefissi relativi alla radice del repository che richiedono conferma prima di un Edit o Write (`../` e symlink vengono risolti).
+- `scripts/verify.sh` non dichiara mai PASS senza aver eseguito almeno un controllo: senza scheme né package fallisce con `NOT CONFIGURED`, e un package elencato ma inesistente è un fallimento.
 
 La tabella completa delle opzioni e delle regole SwiftLint è nel [README in inglese](README.md#configuration).
 
 ## Aggiornare
 
-Modifica il plugin, alza `version` in `plugins/swift-harness/.claude-plugin/plugin.json`, fai push e in Claude Code lancia `/plugin marketplace update mac-dev-plugins`. Per provare modifiche locali senza reinstallare: `claude --plugin-dir ./plugins/swift-harness`.
+Modifica il plugin, alza `version` in `plugins/swift-harness/.claude-plugin/plugin.json`, fai push e in Claude Code lancia `/plugin marketplace update mac-dev-plugins`. Prima del push lancia `tests/run.sh`: richiede solo bash, git e jq (`xcodebuild` e `swift` sono simulati). Per provare modifiche locali senza reinstallare: `claude --plugin-dir ./plugins/swift-harness`.
+
+## Limiti
+
+- I file Swift di riferimento della skill `design-system` sono esempi da adattare, non una libreria.
+- Gli snapshot test cambiano tra versioni di macOS: registrali ed eseguili sullo stesso sistema, e rigenerali dopo aggiornamenti importanti.
+- Il guard sui percorsi protetti copre solo i tool Edit, Write e MultiEdit. Un comando shell eseguito via Bash può comunque modificare un file protetto. Per limiti rigidi usa le [regole di permesso](https://code.claude.com/docs/en/permissions) di Claude Code (`deny`) e considera il guard una protezione contro modifiche accidentali, non una sandbox.
+- `verify.command` viene eseguito come comando shell nel progetto. Con il plugin attivo, qualsiasi repository che contiene `.claude/swift-harness.json` può eseguire i propri comandi quando Claude chiude un turno. Usalo su progetti di cui ti fidi.
 
 ## Licenza
 
