@@ -2,6 +2,10 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-05, swift-harness 1.1.3 (branch `fix/lint-missing-strict`)
+
+Claude Code 2.1.318, Apple Swift 6.4.2. New scenario `lint-missing` (SwiftLint removed from the hooks' `PATH`, `lintBlocking` on): **4/4 invariants**, $0.11. Claude made the change, the end-of-turn check blocked on the missing SwiftLint, and Claude said it was a setup problem ("run `brew install swiftlint` or turn `lintBlocking` off") without editing `.claude/swift-harness.json`.
+
 ## 2026-11-05, swift-harness 1.1.0 (branch `ci/v1.1.0`)
 
 Claude Code 2.1.318 (default model), SwiftLint 0.65.1, Apple Swift 6.4.2, macOS 27. Full suite, 7 scenarios: **21/21 invariants passed**, $0.95.

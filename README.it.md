@@ -105,7 +105,7 @@ Il `.swiftlint.yml` generato aggiunge sei regole che segnalano valori visivi scr
 Uno strumento di qualità va verificato a sua volta. Ogni release passa da:
 
 - **77 controlli automatici** di hook e template (`tests/run.sh`), eseguiti in CI con la `/bin/bash` 3.2 di macOS, più ShellCheck e la compilazione dei file Swift di riferimento.
-- **Uno smoke test in sessioni reali di Claude Code** (`tests/smoke/`): 7 scenari con gli invarianti verificati in automatico. Ultima esecuzione: 21 invarianti su 21 rispettati.
+- **Uno smoke test in sessioni reali di Claude Code** (`tests/smoke/`): 8 scenari con gli invarianti verificati in automatico. Ultime esecuzioni: 25 invarianti su 25 rispettati ([risultati](tests/smoke/RESULTS.md)).
 
 Cosa ha fatto Claude in quelle sessioni:
 
@@ -164,7 +164,7 @@ Da Claude Code 2.1.275 le prime due righe diventano una: `/plugin install swift-
 - `format`: `swiftformat`, `swift-format` (quello di Apple, incluso in Xcode) o `none`. Con `swift-format` tieni un file `.swift-format` nella radice (il setup lo crea): senza, swift-format applica i suoi default, compresa l'indentazione a 2 spazi, a ogni file che Claude modifica, e SessionStart lo segnala.
 - Dopo ogni modifica a un file Swift Claude riceve cosa ha cambiato il formatter (fino a 12 righe) e l'esito di SwiftLint, anche quando è "nessun problema" o "file escluso", così può riferire cosa è stato davvero controllato.
 - Gli hook aggiungono `/opt/homebrew/bin` e `/usr/local/bin` al `PATH` se mancano, per le sessioni avviate da GUI. `SWIFT_HARNESS_EXTRA_PATH` (separato da due punti, vuoto per nessuno) cambia questa lista.
-- `lintBlocking`: `true` blocca Claude sugli errori SwiftLint, e anche quando SwiftLint non riesce a girare o segnala una configurazione non valida; quei file vengono ricontrollati a fine turno. Con `false` Claude riceve solo il report. Da attivare a migrazione finita.
+- `lintBlocking`: `true` blocca Claude sugli errori SwiftLint, e anche quando SwiftLint non riesce a girare o segnala una configurazione non valida; quei file vengono ricontrollati a fine turno. Se SwiftLint non è installato, il controllo a fine turno fallisce dopo le modifiche invece di considerare buono codice mai controllato. Con `false` Claude riceve solo il report. Da attivare a migrazione finita.
 - `verify.command`: qualsiasi comando; codice di uscita 0 significa verifica superata.
 - `protectedPaths`: prefissi relativi alla radice del repository che richiedono conferma prima di un Edit o Write (`../` e symlink vengono risolti, anche quando la voce stessa è un symlink).
 - `scripts/verify.sh` non dichiara mai PASS senza aver eseguito almeno un controllo: senza scheme né package fallisce con `NOT CONFIGURED`, e un package elencato ma inesistente è un fallimento.
