@@ -1,5 +1,6 @@
 #!/bin/bash
 # Shared helpers for swift-harness hooks. Sourced, not executed.
+# shellcheck disable=SC2034 # SH_* result variables are read by the scripts that source this file
 # Every hook is a no-op unless the project contains .claude/swift-harness.json.
 
 # GUI-launched sessions often miss Homebrew on PATH. Append these folders when missing, so
@@ -36,17 +37,17 @@ sh_root() {
 # the same way Claude Code's file tools resolve a path before writing.
 sh_normpath() {
   local part
-  local -a parts out=()
+  local -a parts kept=()
   IFS=/ read -ra parts <<<"$1"
   for part in ${parts[@]+"${parts[@]}"}; do
     case "$part" in
       "" | .) ;;
-      ..) [ "${#out[@]}" -eq 0 ] || unset "out[$((${#out[@]} - 1))]" ;;
-      *) out+=("$part") ;;
+      ..) [ "${#kept[@]}" -eq 0 ] || unset "kept[$((${#kept[@]} - 1))]" ;;
+      *) kept+=("$part") ;;
     esac
   done
   local IFS=/
-  printf '/%s' "${out[*]-}"
+  printf '/%s' "${kept[*]-}"
 }
 
 # Physical absolute path of a file that may not exist yet: normalise the path, resolve the

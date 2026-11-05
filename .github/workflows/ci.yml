@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Static checks (ShellCheck, JSON)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: |
+          for f in plugins/swift-harness/scripts/*.sh \
+                   plugins/swift-harness/skills/setup/templates/verify.sh \
+                   tests/run.sh tests/smoke/*.sh; do
+            bash -n "$f"
+          done
+
+      # Warnings and errors only: info-level notes (e.g. backticks inside single-quoted
+      # prompt text in the tests) are intentional and not checked.
+      - name: ShellCheck
+        run: |
+          shellcheck --version
+          shellcheck -S warning -x -P plugins/swift-harness/scripts \
+            plugins/swift-harness/scripts/*.sh \
+            plugins/swift-harness/skills/setup/templates/verify.sh \
+            tests/run.sh tests/smoke/*.sh
+
+      - name: JSON manifests and templates
+        run: |
+          for f in .claude-plugin/marketplace.json \
+                   plugins/swift-harness/.claude-plugin/plugin.json \
+                   plugins/swift-harness/hooks/hooks.json \
+                   plugins/swift-harness/skills/setup/templates/swift-harness.json \
+                   plugins/swift-harness/skills/setup/templates/swift-format; do
+            jq -e . "$f" > /dev/null && echo "ok $f"
+          done
+
+  hooks:
+    name: Hook tests (macOS bash 3.2)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tool versions
+        run: |
+          /bin/bash --version | head -1
+          jq --version
+          command -v swiftlint && swiftlint version || echo "swiftlint not installed"
+
+      # /bin/bash on macOS is 3.2, the version the hooks must support.
+      - name: tests/run.sh
+        run: /bin/bash tests/run.sh
+
+  swift-fixtures:
+    name: Swift references compile (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # Builds Tokens, PillCenter and SnapshotTest with their dependencies.
+      # Snapshot tests are not run: their baselines depend on the macOS version.
+      - name: Build design-system references with tests
+        working-directory: tests/fixtures/design-system
+        run: swift build --build-tests
+
+      - name: swift-format template is accepted
+        run: |
+          tmp="$(mktemp -d)"
+          cp plugins/swift-harness/skills/setup/templates/swift-format "$tmp/.swift-format"
+          printf 'struct A {\nfunc f() -> Int {\nreturn 1\n}\n}\n' > "$tmp/A.swift"
+          (cd "$tmp" && xcrun swift-format format A.swift) | tee "$tmp/out.swift"
+          grep -q '^    func f' "$tmp/out.swift"
+
+  plugin-validate:
+    name: claude plugin validate
+    runs-on: ubuntu-latest
+    # Needs the Claude Code CLI from npm; informational until it has proven reliable in CI.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: claude --version
+      - run: claude plugin validate ./plugins/swift-harness
+      - run: claude plugin validate .
