@@ -287,7 +287,7 @@ expect_result "post-edit: violation lines use project-relative paths" 0 '\\nSour
 expect_result "post-edit: SwiftLint crash is reported" 0 'SwiftLint did not run correctly' "$(FAKE_LINT=crash post_edit "$P" "$F")"
 expect_result "post-edit: invalid SwiftLint rule config (exit 0) is reported" 0 'Invalid regular expression' "$(FAKE_LINT=badregex post_edit "$P" "$F")"
 expect_result "post-edit: file excluded by .swiftlint.yml is not an error" 0 'excluded by \.swiftlint\.yml' "$(FAKE_LINT=excluded post_edit "$P" "$F")" 'did not run|lintable'
-expect_result "post-edit: missing swiftlint stays quiet on each edit" 0 '^exit=0$' "$(SWIFT_HARNESS_EXTRA_PATH= post_edit "$P" "$F" "$NOLINT")" 'SwiftLint'
+expect_result "post-edit: missing swiftlint stays quiet on each edit" 0 '^exit=0$' "$(SWIFT_HARNESS_EXTRA_PATH='' post_edit "$P" "$F" "$NOLINT")" 'SwiftLint'
 
 echo 'let v = 1' >"$P/Sources/My View.swift"
 expect_result "post-edit: file name with spaces is reported by its project path" 0 'issue\(s\) in Sources/My View.swift' "$(FAKE_LINT=warn post_edit "$P" "$P/Sources/My View.swift")"

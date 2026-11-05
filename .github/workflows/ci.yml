@@ -27,10 +27,12 @@ jobs:
             bash -n "$f"
           done
 
+      # Warnings and errors only: info-level notes (e.g. backticks inside single-quoted
+      # prompt text in the tests) are intentional and not checked.
       - name: ShellCheck
         run: |
           shellcheck --version
-          shellcheck -x -P plugins/swift-harness/scripts \
+          shellcheck -S warning -x -P plugins/swift-harness/scripts \
             plugins/swift-harness/scripts/*.sh \
             plugins/swift-harness/skills/setup/templates/verify.sh \
             tests/run.sh tests/smoke/*.sh
