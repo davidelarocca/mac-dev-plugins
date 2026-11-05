@@ -1,6 +1,6 @@
 #!/bin/bash
 # Stop: run the project's fast verification before Claude ends a turn, but only when
-# Swift sources changed since the last successful run. On failure, block the stop and
+# build inputs changed since the session started and since the last successful run. On failure, block the stop and
 # hand the output to Claude. If Claude tries to stop again without changing anything,
 # or after maxAttempts failures, let it stop and warn the user instead.
 
@@ -15,8 +15,8 @@ max_attempts="$(sh_cfg '.verify.maxAttempts' '3')"
 state="$(sh_state_dir)" || exit 0
 
 fp="$(sh_fingerprint)"
-verified="$(cat "$state/verified" 2>/dev/null)"
-[ "$fp" = "$verified" ] && exit 0
+[ "$fp" = "$(cat "$state/passed" 2>/dev/null)" ] && exit 0
+[ "$fp" = "$(cat "$state/baseline" 2>/dev/null)" ] && exit 0
 
 failed_fp="$(cat "$state/failed" 2>/dev/null)"
 failures="$(cat "$state/failures" 2>/dev/null)"
@@ -41,7 +41,7 @@ out="$(mktemp -t swift-harness-verify.XXXXXX)"
 status=$?
 
 if [ "$status" -eq 0 ]; then
-  printf '%s' "$fp" > "$state/verified"
+  printf '%s' "$fp" > "$state/passed"
   printf '0' > "$state/failures"
   rm -f "$state/failed" "$out"
   exit 0
