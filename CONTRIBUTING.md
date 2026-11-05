@@ -1,10 +1,10 @@
 # Contributing
 
-Thanks for helping. Bug reports, ideas and pull requests are all welcome. For questions and ideas, [Discussions](https://github.com/davidelarocca/mac-dev-plugins/discussions) is the right place; for bugs, open an [issue](https://github.com/davidelarocca/mac-dev-plugins/issues/new/choose). Security problems go through [private reporting](SECURITY.md).
+Thanks for helping. Bug reports, ideas and pull requests are all welcome. For questions and ideas, [Discussions](https://github.com/davidelarocca/swift-harness/discussions) is the right place; for bugs, open an [issue](https://github.com/davidelarocca/swift-harness/issues/new/choose). Security problems go through [private reporting](SECURITY.md).
 
 ## What to work on
 
-The [roadmap](ROADMAP.md) and the [milestones](https://github.com/davidelarocca/mac-dev-plugins/milestones) list what is planned. Issues labelled `good first issue` are small and well defined. For anything larger, comment on the issue first so we can agree on the approach before you write code.
+The [roadmap](ROADMAP.md) and the [milestones](https://github.com/davidelarocca/swift-harness/milestones) list what is planned. Issues labelled `good first issue` are small and well defined. For anything larger, comment on the issue first so we can agree on the approach before you write code.
 
 ## Try your changes
 

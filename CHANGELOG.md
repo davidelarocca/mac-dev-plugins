@@ -1,5 +1,23 @@
 # Changelog
 
+## swift-harness 1.1.1 (2026-11-05)
+
+The repository and the marketplace are now both called **swift-harness**. The plugin's behaviour is unchanged.
+
+- New install commands:
+  ```
+  /plugin marketplace add davidelarocca/swift-harness
+  /plugin install swift-harness@swift-harness
+  ```
+- If you added the marketplace under its old name, switch once:
+  ```
+  /plugin marketplace remove mac-dev-plugins
+  /plugin marketplace add davidelarocca/swift-harness
+  /plugin install swift-harness@swift-harness
+  ```
+  Old GitHub URLs redirect to the new repository.
+- New documentation: public [roadmap](ROADMAP.md), [security policy and trust model](SECURITY.md), [contribution guide](CONTRIBUTING.md), Code of Conduct, issue forms, and a redesigned README with a demo recorded in a real Claude Code session.
+
 ## swift-harness 1.1.0 (2026-11-05)
 
 Automated validation. The plugin's behaviour is unchanged.

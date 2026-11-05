@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and ideas
-    url: https://github.com/davidelarocca/mac-dev-plugins/discussions
+    url: https://github.com/davidelarocca/swift-harness/discussions
     about: Ask how to set up or use swift-harness, or discuss an idea before opening an issue.
   - name: Security problem
-    url: https://github.com/davidelarocca/mac-dev-plugins/security/advisories/new
+    url: https://github.com/davidelarocca/swift-harness/security/advisories/new
     about: Report a vulnerability privately.

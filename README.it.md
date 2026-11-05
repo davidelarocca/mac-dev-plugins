@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/davidelarocca/mac-dev-plugins/actions/workflows/ci.yml"><img src="https://github.com/davidelarocca/mac-dev-plugins/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/davidelarocca/mac-dev-plugins/releases/latest"><img src="https://img.shields.io/github/v/release/davidelarocca/mac-dev-plugins?display_name=release&label=release" alt="Ultima release"></a>
+  <a href="https://github.com/davidelarocca/swift-harness/actions/workflows/ci.yml"><img src="https://github.com/davidelarocca/swift-harness/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/davidelarocca/swift-harness/releases/latest"><img src="https://img.shields.io/github/v/release/davidelarocca/swift-harness?display_name=release&label=release" alt="Ultima release"></a>
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Plugin per Claude Code">
   <img src="https://img.shields.io/badge/macOS-Swift_%C2%B7_SwiftUI-1C2140" alt="macOS, Swift, SwiftUI">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/davidelarocca/mac-dev-plugins" alt="Licenza MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/davidelarocca/swift-harness" alt="Licenza MIT"></a>
 </p>
 
 <p align="center">
@@ -25,8 +25,8 @@
 </p>
 
 ```
-/plugin marketplace add davidelarocca/mac-dev-plugins
-/plugin install swift-harness@mac-dev-plugins
+/plugin marketplace add davidelarocca/swift-harness
+/plugin install swift-harness@swift-harness
 /swift-harness:setup
 ```
 
@@ -129,8 +129,8 @@ brew install jq swiftlint swiftformat
 **Installazione**, in Claude Code:
 
 ```
-/plugin marketplace add davidelarocca/mac-dev-plugins
-/plugin install swift-harness@mac-dev-plugins
+/plugin marketplace add davidelarocca/swift-harness
+/plugin install swift-harness@swift-harness
 /plugin install swift-lsp@claude-plugins-official   # consigliato: diagnostica dei tipi dopo ogni modifica
 ```
 
@@ -172,7 +172,7 @@ Prossima tappa: **v1.2.0, fiducia e onboarding.** I comandi della repo girano so
 
 ## Limiti
 
-- **I comandi della repo girano senza approvazione** fino alla v1.2.0 ([#6](https://github.com/davidelarocca/mac-dev-plugins/issues/6)): qualsiasi repository che contiene `.claude/swift-harness.json` può eseguire il proprio `verify.command` quando Claude chiude un turno. Usa il plugin su progetti di cui ti fidi. Vedi [SECURITY.md](SECURITY.md).
+- **I comandi della repo girano senza approvazione** fino alla v1.2.0 ([#6](https://github.com/davidelarocca/swift-harness/issues/6)): qualsiasi repository che contiene `.claude/swift-harness.json` può eseguire il proprio `verify.command` quando Claude chiude un turno. Usa il plugin su progetti di cui ti fidi. Vedi [SECURITY.md](SECURITY.md).
 - **Il guard sui percorsi protetti non è una sandbox.** Copre solo i tool Edit, Write e MultiEdit; un comando shell eseguito via Bash può comunque modificare un file protetto. Per limiti rigidi usa le [regole di permesso](https://code.claude.com/docs/en/permissions) di Claude Code (`deny`).
 - I file Swift di riferimento della skill `design-system` sono esempi da adattare, non una libreria.
 - Gli snapshot test cambiano tra versioni di macOS: registrali ed eseguili sullo stesso sistema, e rigenerali dopo aggiornamenti importanti.
@@ -180,9 +180,9 @@ Prossima tappa: **v1.2.0, fiducia e onboarding.** I comandi della repo girano so
 
 ## Contribuire
 
-Issue, idee e pull request sono benvenute: vedi [CONTRIBUTING.md](CONTRIBUTING.md). Le domande vanno nelle [Discussions](https://github.com/davidelarocca/mac-dev-plugins/discussions), i problemi di sicurezza nella [segnalazione privata](SECURITY.md).
+Issue, idee e pull request sono benvenute: vedi [CONTRIBUTING.md](CONTRIBUTING.md). Le domande vanno nelle [Discussions](https://github.com/davidelarocca/swift-harness/discussions), i problemi di sicurezza nella [segnalazione privata](SECURITY.md).
 
-Per provare modifiche locali senza reinstallare: `claude --plugin-dir ./plugins/swift-harness`. Dopo una release, aggiorna con `/plugin marketplace update mac-dev-plugins`.
+Per provare modifiche locali senza reinstallare: `claude --plugin-dir ./plugins/swift-harness`. Dopo una release, aggiorna con `/plugin marketplace update swift-harness`.
 
 ## Licenza
 
