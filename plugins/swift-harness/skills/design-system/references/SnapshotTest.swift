@@ -41,7 +41,7 @@ struct PillViewSnapshotTests {
     @Test func longText() {
         let pill = Pill.success(String(repeating: "Very long album title ", count: 6))
         assertSnapshot(
-            of: render(PillView(pill: pill), size: CGSize(width: 320, height: 90), appearance: .aqua),
+            of: render(PillView(pill: pill), size: CGSize(width: 320, height: 90), appearance: .light),
             as: .image(precision: 0.99, perceptualPrecision: 0.98)
         )
     }
