@@ -23,7 +23,7 @@ TEMPLATES="$PLUGIN/skills/setup/templates"
 WORK="${SMOKE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/swift-harness-smoke.XXXXXX")}"
 WORK="$(mkdir -p "$WORK" && cd "$WORK" && pwd -P)"
 
-ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels"
+ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels lint-missing"
 
 for tool in claude swift swiftlint jq git; do
   command -v "$tool" >/dev/null 2>&1 || { echo "smoke: $tool not found" >&2; exit 2; }
@@ -191,6 +191,20 @@ check_formatter_labels() {
   expect "formatter changes shown with labels" has_hook PostToolUse 0 'Formatter changes \(- your edit as written'
 }
 
+scenario_lint_missing() {
+  CONFIG="{$BASE_CONFIG,\"lintBlocking\":true}"
+  TASK='Add a function `farewell(for name: String) -> String` that returns "Goodbye, <name>!" in Sources/App/Greeting.swift.'
+  SETUP="$FOUR_SPACES"
+  # A machine without SwiftLint: minimal PATH and no Homebrew fallback for the hooks.
+  SESSION_ENV="PATH=$(dirname "$(command -v claude)"):/usr/bin:/bin SWIFT_HARNESS_EXTRA_PATH="
+}
+check_lint_missing() {
+  expect "Stop blocked because SwiftLint is missing under lintBlocking" has_hook Stop 2 'SwiftLint is not installed'
+  expect "user warned that the check is still failing" has_hook Stop 0 'still failing'
+  expect "swift-harness.json unchanged (no workaround)" unchanged .claude/swift-harness.json
+  expect "requested change made" file_has Sources/App/Greeting.swift 'Goodbye'
+}
+
 # ---------- checks ----------
 
 T=""   # transcript of the scenario being checked
@@ -229,6 +243,7 @@ run_scenario() { # $1 name
   local name="$1" fn d
   fn="scenario_${name//-/_}"
   d="$WORK/$name"
+  SESSION_ENV=""
   "$fn"
   rm -rf "$d"
   git clone -q "$WORK/base" "$d"
@@ -240,7 +255,8 @@ run_scenario() { # $1 name
   (cd "$d" && swift build --build-tests >/dev/null 2>&1)
   (
     cd "$d" || exit 1
-    claude -p "$TASK" ${SMOKE_MODEL:+--model "$SMOKE_MODEL"} \
+    # shellcheck disable=SC2086 # SESSION_ENV is a list of VAR=value words
+    env $SESSION_ENV claude -p "$TASK" ${SMOKE_MODEL:+--model "$SMOKE_MODEL"} \
       --plugin-dir "$PLUGIN" --setting-sources project,local \
       --permission-mode acceptEdits \
       --allowedTools Read Glob Grep Edit Write "Bash(swift build:*)" "Bash(swift test:*)" \
