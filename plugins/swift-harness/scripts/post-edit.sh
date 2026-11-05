@@ -37,14 +37,22 @@ case "$formatter" in
     ;;
 esac
 if [ "${#fmt_cmd[@]}" -gt 0 ]; then
-  before="$(shasum "$path" | cut -d' ' -f1)"
+  original="$(mktemp -t swift-harness-original.XXXXXX)"
+  cp "$path" "$original"
   fmt_err="$(mktemp -t swift-harness-format.XXXXXX)"
   (cd "$SH_ROOT" && "${fmt_cmd[@]}" >/dev/null 2>"$fmt_err")
   fmt_status=$?
-  after="$(shasum "$path" | cut -d' ' -f1)"
-  if [ "$before" != "$after" ]; then
-    add_note "The formatter rewrote $rel. Re-read it before editing it again."
+  if ! cmp -s "$original" "$path"; then
+    # Show what the formatter changed, so it is not confused with the edit itself.
+    changes="$(diff -U0 "$original" "$path" | grep -E '^[-+]' | grep -vE '^(---|\+\+\+) ')"
+    total="$(printf '%s\n' "$changes" | grep -c .)"
+    shown="$(printf '%s\n' "$changes" | head -12)"
+    [ "$total" -le 12 ] || shown="$shown
+... $((total - 12)) more changed lines"
+    add_note "The formatter rewrote $rel. Re-read it before editing it again. Formatter changes (- your edit as written, + after formatting; the formatter changed only these lines):
+$shown"
   fi
+  rm -f "$original"
   if [ "$fmt_status" -ne 0 ]; then
     add_note "$formatter failed on $rel (exit $fmt_status), so the file may not be formatted. Usually a syntax error in the edit:
 $(grep -v '^[[:space:]]*$' "$fmt_err" | head -10)"
@@ -58,6 +66,8 @@ if [ "$(sh_cfg '.lint' 'swiftlint')" = "swiftlint" ]; then
   sh_swiftlint "$path"
 
   case "$SH_LINT_RESULT" in
+    clean) add_note "SwiftLint: no issues in $rel." ;;
+    excluded) add_note "SwiftLint: $rel is excluded by .swiftlint.yml, so it was not linted." ;;
     warnings | errors)
       count="$(printf '%s\n' "$SH_LINT_OUTPUT" | grep -cE ': (warning|error):')"
       add_note "SwiftLint: $count issue(s) in $rel. Fix the ones on lines you wrote or changed; leave pre-existing ones unless the task covers them.
@@ -76,9 +86,14 @@ $SH_LINT_OUTPUT}"
   if [ "$blocking" = "true" ]; then
     state="$(sh_state_dir)"
     case "$SH_LINT_RESULT" in
-      errors | broken)
+      errors)
         [ -z "$state" ] || sh_lint_pending_add "$state" "$rel"
-        printf '%s\n\nThe edit is applied but %s does not pass SwiftLint. Fix this before continuing.\n' "$notes" "$rel" >&2
+        printf '%s\n\nThe edit is applied, but %s has SwiftLint errors and lintBlocking is on. Fix the errors on lines you wrote or changed. If an error is on a line that was already there before your edit and the task does not cover it, leave it and say so in one line: the turn will then end as failed so the user can decide.\n' "$notes" "$rel" >&2
+        exit 2
+        ;;
+      broken)
+        [ -z "$state" ] || sh_lint_pending_add "$state" "$rel"
+        printf '%s\n\nThe edit is applied, but SwiftLint is not working correctly and lintBlocking is on. This usually comes from .swiftlint.yml, not from your edit: do not change .swiftlint.yml unless the task covers it, and tell the user what SwiftLint reported. The turn will end as failed until it is fixed.\n' "$notes" >&2
         exit 2
         ;;
       clean | warnings | excluded)
