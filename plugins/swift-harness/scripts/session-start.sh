@@ -24,6 +24,12 @@ if git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     if [ -n "$fp" ] && [ "$fp" = "$(cat "$state/failed" 2>/dev/null)" ]; then
       echo "swift-harness: the last verification ('$verify_cmd') failed on the current code and has not passed since. Treat the project as not verified."
     fi
+    # Files blocked by lintBlocking are re-linted when the code changes; say so now, since
+    # unchanged code is not re-checked.
+    if [ "$(sh_cfg '.lintBlocking' 'false')" = "true" ] && [ -s "$state/lint-pending" ]; then
+      pending="$(head -5 "$state/lint-pending" | paste -sd, - | sed 's/,/, /g')"
+      echo "swift-harness: lintBlocking is on and these files failed SwiftLint at the last check: $pending. They are linted again at the end of the next turn that changes code."
+    fi
   }
 fi
 
