@@ -260,12 +260,14 @@ FAKE
 cp "$PEFAKES/swiftformat" "$NOLINT/swiftformat"
 chmod +x "$PEFAKES"/* "$NOLINT"/*
 
-# $1 project, $2 file, $3 optional fakes dir. Prints "exit=<code>" then stdout+stderr.
+# $1 project, $2 file, $3 optional fakes dir used with a minimal system PATH instead of the
+# full one. Prints "exit=<code>" then stdout+stderr.
 post_edit() {
-  local out code
+  local out code path="$PEFAKES:$PATH"
+  [ -z "${3:-}" ] || path="$3:/usr/bin:/bin"
   : >"$TOOLLOG"
   out="$(jq -nc --arg cwd "$1" --arg f "$2" '{cwd: $cwd, tool_name: "Edit", tool_input: {file_path: $f}}' |
-    PATH="${3:-$PEFAKES}:$PATH" FAKE_TOOL_LOG="$TOOLLOG" CLAUDE_PLUGIN_DATA="$TMP/data" CLAUDE_PROJECT_DIR="$1" \
+    PATH="$path" FAKE_TOOL_LOG="$TOOLLOG" CLAUDE_PLUGIN_DATA="$TMP/data" CLAUDE_PROJECT_DIR="$1" \
       "$SCRIPTS/post-edit.sh" 2>&1)"
   code=$?
   printf 'exit=%s\n%s' "$code" "$out"
@@ -277,14 +279,15 @@ F="$P/Sources/App.swift"
 
 set_config "$P" '{"format":"swiftformat","lint":"swiftlint"}'
 expect_result "post-edit: formatter rewrite asks Claude to re-read the file" 0 'Re-read' "$(FAKE_FMT=rewrite post_edit "$P" "$F")"
+expect_result "post-edit: formatter note shows the lines it changed" 0 'Formatter changes \(- your edit as written, \+ after formatting[^)]*\):\\n[+]// formatted' "$(FAKE_FMT=rewrite post_edit "$P" "$F")"
 expect_result "post-edit: swiftformat failure is reported" 0 'swiftformat failed.*Unexpected token' "$(FAKE_FMT=fail post_edit "$P" "$F")"
-expect_result "post-edit: clean format and lint stay quiet" 0 '^exit=0$' "$(post_edit "$P" "$F")" 'SwiftLint|swiftformat'
+expect_result "post-edit: clean lint is reported as clean" 0 'SwiftLint: no issues in Sources/App\.swift' "$(post_edit "$P" "$F")" 'swiftformat|Re-read'
 expect_result "post-edit: lint warnings are reported without blocking" 0 'SwiftLint: 1 issue' "$(FAKE_LINT=warn post_edit "$P" "$F")"
 expect_result "post-edit: violation lines use project-relative paths" 0 '\\nSources/App\.swift:1:5: warning' "$(FAKE_LINT=warn post_edit "$P" "$F")" '"//|\\n/'
 expect_result "post-edit: SwiftLint crash is reported" 0 'SwiftLint did not run correctly' "$(FAKE_LINT=crash post_edit "$P" "$F")"
 expect_result "post-edit: invalid SwiftLint rule config (exit 0) is reported" 0 'Invalid regular expression' "$(FAKE_LINT=badregex post_edit "$P" "$F")"
-expect_result "post-edit: file excluded by .swiftlint.yml is not an error" 0 '^exit=0$' "$(FAKE_LINT=excluded post_edit "$P" "$F")" 'did not run|lintable'
-expect_result "post-edit: missing swiftlint stays quiet on each edit" 0 '^exit=0$' "$(post_edit "$P" "$F" "$NOLINT")" 'SwiftLint'
+expect_result "post-edit: file excluded by .swiftlint.yml is not an error" 0 'excluded by \.swiftlint\.yml' "$(FAKE_LINT=excluded post_edit "$P" "$F")" 'did not run|lintable'
+expect_result "post-edit: missing swiftlint stays quiet on each edit" 0 '^exit=0$' "$(SWIFT_HARNESS_EXTRA_PATH= post_edit "$P" "$F" "$NOLINT")" 'SwiftLint'
 
 echo 'let v = 1' >"$P/Sources/My View.swift"
 expect_result "post-edit: file name with spaces is reported by its project path" 0 'issue\(s\) in Sources/My View.swift' "$(FAKE_LINT=warn post_edit "$P" "$P/Sources/My View.swift")"
@@ -298,6 +301,8 @@ if [ ! -s "$TOOLLOG" ]; then ok "post-edit: format and lint set to none run noth
 
 set_config "$P" '{"format":"swiftformat","lint":"swiftlint","lintBlocking":true}'
 expect_result "post-edit: lintBlocking blocks on lint errors" 2 'Force Unwrapping' "$(FAKE_LINT=error post_edit "$P" "$F")"
+expect_result "post-edit: lintBlocking message says what to do with pre-existing errors" 2 'already there before your edit' "$(FAKE_LINT=error post_edit "$P" "$F")" 'Fix this before continuing'
+expect_result "post-edit: lintBlocking on a config problem says not to change the config on its own" 2 'do not change \.swiftlint\.yml' "$(FAKE_LINT=badregex post_edit "$P" "$F")"
 expect_result "post-edit: lintBlocking blocks when SwiftLint crashes" 2 'did not run correctly' "$(FAKE_LINT=crash post_edit "$P" "$F")"
 expect_result "post-edit: lintBlocking blocks on invalid SwiftLint rule config" 2 'Invalid regular expression' "$(FAKE_LINT=badregex post_edit "$P" "$F")"
 expect_result "post-edit: lintBlocking does not block on warnings" 0 'SwiftLint: 1 issue' "$(FAKE_LINT=warn post_edit "$P" "$F")"
@@ -385,6 +390,28 @@ fi
 wt_resume="$(hook session-start.sh "$W" '{"source":"resume"}')"
 if grep -qi failed <<<"$wt_resume"; then ok "worktrees: each worktree keeps its own failure state"
 else nok "worktrees: each worktree keeps its own failure state" "${wt_resume:-<empty>}"; fi
+
+# ---------- swift-format configuration ----------
+
+P="$(new_project swift-format-config)"
+set_config "$P" '{"format":"swift-format","lint":"none"}'
+out="$(PATH="$PEFAKES:$PATH" hook session-start.sh "$P" '{"source":"startup"}')"
+if grep -q 'no .swift-format' <<<"$out"; then ok "session-start: warns when swift-format has no .swift-format file"
+else nok "session-start: warns when swift-format has no .swift-format file" "${out:-<empty>}"; fi
+cp "$PLUGIN/skills/setup/templates/swift-format" "$P/.swift-format" 2>/dev/null
+out="$(PATH="$PEFAKES:$PATH" hook session-start.sh "$P" '{"source":"startup"}')"
+if [ -f "$P/.swift-format" ] && ! grep -q '.swift-format' <<<"$out"; then ok "session-start: no warning when .swift-format exists"
+else nok "session-start: no warning when .swift-format exists" "${out:-<empty>}"; fi
+set_config "$P" '{"format":"swiftformat","lint":"none"}'
+rm -f "$P/.swift-format"
+out="$(PATH="$PEFAKES:$PATH" hook session-start.sh "$P" '{"source":"startup"}')"
+if ! grep -q '.swift-format' <<<"$out"; then ok "session-start: no swift-format warning when swiftformat is used"
+else nok "session-start: no swift-format warning when swiftformat is used" "$out"; fi
+if jq -e '.indentation.spaces == 4 and .lineLength == 160' "$PLUGIN/skills/setup/templates/swift-format" >/dev/null 2>&1; then
+  ok "setup: swift-format template uses 4 spaces and 160 columns like the swiftformat template"
+else
+  nok "setup: swift-format template uses 4 spaces and 160 columns like the swiftformat template"
+fi
 
 # ---------- verify.sh template ----------
 
