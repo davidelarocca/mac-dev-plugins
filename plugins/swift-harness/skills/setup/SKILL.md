@@ -62,6 +62,7 @@ Rules for filling templates:
 
 - Fill `paths:` globs in the rules with the real folder layout found in step 2.
 - Fill the SwiftLint `excluded` regex for custom rules with the real design system path.
+- In `verify.sh`: `{{LOCAL_PACKAGES}}` becomes quoted paths (`"Packages/DesignSystem" "Packages/Domain"`) or nothing for `PACKAGES=()`; `{{SCHEME}}` and `{{XCODE_CONTAINER_FLAG}}` become empty strings for a packages-only project. At least one of the two must be set: with neither, the script reports `NOT CONFIGURED` and fails.
 - Keep CLAUDE.md under 100 lines. Link to docs, do not copy them.
 - If the project has existing hub and spoke docs, make `docs/ARCHITECTURE.md` the hub that links to them. Do not move or rewrite the existing docs in this step; list outdated ones as follow-ups.
 - Populate `COMPONENT_REGISTRY.md` only with components that really exist and are shared. Unknown or duplicated ones go in the "To consolidate" section. Do not invent entries.
