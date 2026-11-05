@@ -39,6 +39,11 @@ if [ "$(sh_cfg '.verify.enabled' 'true')" = "true" ] && [[ "$verify_bin" == */* 
   echo "swift-harness: verify command '$verify_bin' is missing or not executable. The Stop check will fail until it exists."
 fi
 
+# swift-format without a config file uses 2-space indentation and rewrites whole files.
+if [ "$(sh_cfg '.format' 'swiftformat')" = "swift-format" ] && [ ! -f "$SH_ROOT/.swift-format" ]; then
+  echo "swift-harness: format is swift-format but the project has no .swift-format file, so swift-format applies its defaults (2-space indentation) to every file Claude edits. Tell the user; /swift-harness:setup ships a template with 4 spaces."
+fi
+
 if [ "${#missing[@]}" -gt 0 ]; then
   echo "swift-harness: not installed: ${missing[*]}. Those checks are skipped. Install with: brew install ${missing[*]}"
 fi
