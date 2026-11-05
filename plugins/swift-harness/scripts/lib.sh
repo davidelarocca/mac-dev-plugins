@@ -2,8 +2,13 @@
 # Shared helpers for swift-harness hooks. Sourced, not executed.
 # Every hook is a no-op unless the project contains .claude/swift-harness.json.
 
-# GUI-launched sessions often miss Homebrew on PATH.
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+# GUI-launched sessions often miss Homebrew on PATH. Append it when missing, so tools that
+# are already on PATH keep their order (and the test suite's fake tools stay first).
+for sh_dir in /opt/homebrew/bin /usr/local/bin; do
+  case ":$PATH:" in *":$sh_dir:"*) ;; *) PATH="$PATH:$sh_dir" ;; esac
+done
+unset sh_dir
+export PATH
 
 SH_INPUT="$(cat)"
 
@@ -107,6 +112,62 @@ sh_fingerprint() {
     git -C "$SH_ROOT" ls-files -z --others --exclude-standard -- "${SH_BUILD_INPUTS[@]}" 2>/dev/null |
       while IFS= read -r -d '' f; do shasum "$SH_ROOT/$f" 2>/dev/null; done
   } | shasum | cut -d' ' -f1
+}
+
+# Lint one file with SwiftLint and classify the result in SH_LINT_RESULT:
+#   clean | warnings | errors | broken | excluded | missing
+# "errors" means serious violations (SwiftLint exits 2). "broken" means SwiftLint did not
+# apply its rules correctly: a non-zero exit without violations, or a configuration problem
+# on stderr (SwiftLint skips a rule with an invalid configuration or regex and exits 0).
+# "excluded" is a file left out by the `excluded` list (--force-exclude finds no files).
+# Also sets SH_LINT_STATUS, SH_LINT_OUTPUT (violations, root-relative) and SH_LINT_ERRORS
+# (stderr), both bounded.
+sh_swiftlint() {
+  local err
+  SH_LINT_STATUS=0
+  SH_LINT_OUTPUT=""
+  SH_LINT_ERRORS=""
+  if ! command -v swiftlint >/dev/null 2>&1; then
+    SH_LINT_RESULT=missing
+    return
+  fi
+  err="$(mktemp -t swift-harness-lint.XXXXXX)"
+  SH_LINT_OUTPUT="$(cd "$SH_ROOT" && swiftlint lint --quiet --force-exclude "$1" 2>"$err")"
+  SH_LINT_STATUS=$?
+  SH_LINT_ERRORS="$(grep -v '^[[:space:]]*$' "$err" | head -20)"
+  rm -f "$err"
+  SH_LINT_OUTPUT="$(printf '%s\n' "$SH_LINT_OUTPUT" | grep -E ': (warning|error):' | head -20)"
+  # Keep the prefix in a variable: bash 3.2 treats a literal "/" inside a quoted
+  # ${var//pattern/} pattern as the separator.
+  local prefix="$SH_ROOT/"
+  SH_LINT_OUTPUT="${SH_LINT_OUTPUT//"$prefix"/}"
+
+  if [ "$SH_LINT_STATUS" -ne 0 ] && grep -q 'No lintable files found' <<<"$SH_LINT_ERRORS"; then
+    SH_LINT_RESULT=excluded
+  elif [ "$SH_LINT_STATUS" -ne 0 ] && ! grep -q ': error:' <<<"$SH_LINT_OUTPUT"; then
+    SH_LINT_RESULT=broken
+  elif grep -qiE 'invalid|error:|fatal|could not' <<<"$SH_LINT_ERRORS"; then
+    SH_LINT_RESULT=broken
+  elif [ "$SH_LINT_STATUS" -ne 0 ]; then
+    SH_LINT_RESULT=errors
+  elif [ -n "$SH_LINT_OUTPUT" ]; then
+    SH_LINT_RESULT=warnings
+  else
+    SH_LINT_RESULT=clean
+  fi
+}
+
+# Files that failed SwiftLint under lintBlocking. The Stop check re-lints them, so a
+# blocked edit cannot end the turn as verified.
+sh_lint_pending_add() {
+  local list="$1/lint-pending"
+  grep -qxF -- "$2" "$list" 2>/dev/null || printf '%s\n' "$2" >>"$list"
+}
+sh_lint_pending_remove() {
+  local list="$1/lint-pending"
+  [ -f "$list" ] || return 0
+  grep -vxF -- "$2" "$list" >"$list.tmp"
+  mv "$list.tmp" "$list"
 }
 
 # Initialise SH_ROOT and SH_CONFIG. Returns 1 when the project has not opted in.

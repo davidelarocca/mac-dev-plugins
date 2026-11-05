@@ -27,7 +27,7 @@ swift-harness fixes this on three levels:
 | Subagent | `ui-reviewer` | Read-only review of a UI diff against the design system, the registry and the architecture rules. |
 | Hook | SessionStart | Records the starting code state as a baseline (not as verified), warns if the last check failed on the same code, and reports missing tools. |
 | Hook | PreToolUse | Asks for confirmation before Claude edits `project.pbxproj` or a protected path with the Edit or Write tools. Not a sandbox: see [Limitations](#limitations). |
-| Hook | PostToolUse | Formats and lints the Swift file just edited; lint results go back to Claude. |
+| Hook | PostToolUse | Formats and lints the Swift file just edited (only files inside the project); lint results, formatter failures and SwiftLint configuration errors go back to Claude. |
 | Hook | Stop | Runs your fast verification before Claude ends a turn, only when build inputs changed (Swift code, project and build settings, resources). |
 
 Always-on context cost is about 770 tokens per session. Skills load their full instructions only when used.
@@ -42,6 +42,7 @@ Every hook is a no-op unless the project contains `.claude/swift-harness.json` (
 - Code changed and the check fails: Claude is blocked and receives the last 60 lines of output.
 - Claude tries to stop again without changing anything: it may stop, and you get a warning.
 - After `maxAttempts` consecutive failures (default 3): Claude stops and you decide.
+- With `lintBlocking: true`, files that failed SwiftLint after an edit are linted again here. The edit itself cannot be undone by a hook, so this is where it is caught: the turn is not recorded as passed until those files are clean.
 - "Changed" means any build input: Swift files, `Package.resolved`, `.pbxproj`, `.xcconfig`, plists, entitlements, asset and string catalogs, `Resources/` folders, snapshot baselines, `scripts/`, lint and harness config. `.build` and DerivedData are ignored.
 - A failure survives a new session: on startup or resume, Claude is told if the last check failed on the current code.
 - Works per git worktree, so parallel agents each verify their own checkout.
@@ -118,11 +119,11 @@ Recommended companion, for type diagnostics after every edit:
 |---|---|---|
 | `format` | `swiftformat`, `swift-format`, `none` | `swiftformat` |
 | `lint` | `swiftlint`, `none` | `swiftlint` |
-| `lintBlocking` | `true` blocks Claude on SwiftLint errors; `false` only reports | `false` |
+| `lintBlocking` | `true` blocks Claude on SwiftLint errors and on SwiftLint failing to run or reporting an invalid configuration, and re-checks those files at the end of the turn; `false` only reports | `false` |
 | `verify.enabled` | run the Stop check | `true` |
 | `verify.command` | any shell command, exit 0 means pass | `scripts/verify.sh fast` |
 | `verify.maxAttempts` | consecutive failures before Claude may stop | `3` |
-| `protectedPaths` | path prefixes relative to the repo root that require approval before an Edit or Write (`../` and symlinks are resolved) | `[]` |
+| `protectedPaths` | path prefixes relative to the repo root that require approval before an Edit or Write (`../` and symlinks are resolved, also when the entry itself is a symlink) | `[]` |
 | `guardPbxproj` | ask before edits to `*.pbxproj` | `true` |
 
 The generated `scripts/verify.sh` runs `swift test` on local packages and an incremental `xcodebuild build` in `fast` mode, and `xcodebuild test` plus strict SwiftLint in `full` mode. It uses a separate DerivedData folder so it never fights with an open Xcode. It never reports PASS without running at least one check: with no scheme and no package it fails with `NOT CONFIGURED`, and a listed package that does not exist is a failure.

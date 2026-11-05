@@ -23,6 +23,18 @@ nok() {
   [ -z "${2:-}" ] || printf '%s\n' "$2" | sed 's/^/      /' | head -15
 }
 
+# $1 name, $2 expected exit code, $3 regex that must match the output,
+# $4 output starting with "exit=<code>", $5 optional regex that must not match.
+expect_result() {
+  local code="${4%%$'\n'*}"
+  code="${code#exit=}"
+  if [ "$code" = "$2" ] && grep -qE -- "$3" <<<"$4" && { [ -z "${5:-}" ] || ! grep -qE -- "$5" <<<"$4"; }; then
+    ok "$1"
+  else
+    nok "$1" "$4"
+  fi
+}
+
 # ---------- fixtures ----------
 
 # A git repo opted into swift-harness, with a protected Sources/Audio/ and a
@@ -56,7 +68,9 @@ EOF
 
 # Run a hook script with a JSON input. $1 script, $2 cwd, $3 extra JSON fields (object).
 hook() {
-  jq -nc --arg cwd "$2" --argjson extra "${3:-{\}}" '{cwd: $cwd, session_id: "test"} + $extra' |
+  local extra="${3:-}"
+  [ -n "$extra" ] || extra='{}'
+  jq -nc --arg cwd "$2" --argjson extra "$extra" '{cwd: $cwd, session_id: "test"} + $extra' |
     CLAUDE_PLUGIN_DATA="$TMP/data" CLAUDE_PROJECT_DIR="$2" "$SCRIPTS/$1"
 }
 
@@ -99,6 +113,17 @@ expect_ask "$P" "$P/Sources/EngineAlias.swift" "guard: symlinked file pointing i
 P="$(new_project 'My Café App')"
 expect_ask "$P" "$P/Sources/Audio/Engine.swift" "guard: project path with spaces and accents asks"
 expect_no_ask "$P" "$P/Sources/App.swift" "guard: project path with spaces and accents, unprotected file"
+
+P="$(new_project guard-link-entry)"
+ln -s Sources/Audio "$P/Audio"
+printf '%s\n' '{"protectedPaths":["Audio/"]}' >"$P/.claude/swift-harness.json"
+expect_ask "$P" "$P/Sources/Audio/Engine.swift" "guard: protected entry that is a symlink protects its target"
+expect_ask "$P" "$P/Audio/Engine.swift" "guard: protected entry that is a symlink protects the link path"
+expect_no_ask "$P" "$P/Sources/App.swift" "guard: protected symlink entry does not protect unrelated files"
+
+mkdir -p "$TMP/elsewhere/Sources/Audio"
+expect_no_ask "$P" "$TMP/elsewhere/Sources/Audio/x.swift" "guard: file outside the repository does not ask"
+expect_no_ask "$P" "$P/../elsewhere/Sources/Audio/x.swift" "guard: ../ out of the repository does not ask"
 
 mkdir -p "$TMP/plain/Sources/Audio"
 git -C "$TMP/plain" init -q
@@ -144,7 +169,7 @@ runs() { [ -f "$LOG" ] && wc -l <"$LOG" | tr -d ' ' || echo 0; }
 
 stop() { # $1 extra JSON; prints "exit=<code>" then stdout+stderr
   local out code
-  out="$(FAKE_VERIFY_LOG="$LOG" hook stop-verify.sh "$P" "${1:-{\}}" 2>&1)"
+  out="$(FAKE_VERIFY_LOG="$LOG" hook stop-verify.sh "$P" "${1:-}" 2>&1)"
   code=$?
   printf 'exit=%s\n%s' "$code" "$out"
 }
@@ -189,6 +214,178 @@ out="$(FAKE_VERIFY_EXIT=0 stop)"
 if [ "$(runs)" = 3 ]; then ok "stop: .xcconfig change triggers verification"
 else nok "stop: .xcconfig change triggers verification" "$out"; fi
 
+# ---------- post-edit.sh ----------
+
+PEFAKES="$TMP/pe-fakes"
+NOLINT="$TMP/pe-fakes-nolint"
+TOOLLOG="$TMP/tools.log"
+mkdir -p "$PEFAKES" "$NOLINT"
+cat >"$PEFAKES/swiftformat" <<'FAKE'
+#!/bin/bash
+for f; do :; done
+echo "swiftformat $f" >>"$FAKE_TOOL_LOG"
+case "${FAKE_FMT:-ok}" in
+  rewrite) echo "// formatted" >>"$f" ;;
+  fail) echo "error: Unexpected token ) at 1:1" >&2; exit 70 ;;
+esac
+exit 0
+FAKE
+cat >"$PEFAKES/xcrun" <<'FAKE'
+#!/bin/bash
+[ "$1" = --find ] && { echo /fake/swift-format; exit 0; }
+for f; do :; done
+echo "swift-format $f" >>"$FAKE_TOOL_LOG"
+case "${FAKE_FMT:-ok}" in
+  rewrite) echo "// formatted" >>"$f" ;;
+  fail) echo "error: Unexpected token ) at 1:1" >&2; exit 1 ;;
+esac
+exit 0
+FAKE
+# Modes follow SwiftLint's real behaviour: serious violations exit 2; an invalid rule
+# configuration only prints a warning on stderr and exits 0; a file excluded with
+# --force-exclude fails with "No lintable files found".
+cat >"$PEFAKES/swiftlint" <<'FAKE'
+#!/bin/bash
+for f; do :; done
+echo "swiftlint $f" >>"$FAKE_TOOL_LOG"
+case "${FAKE_LINT:-clean}" in
+  warn) echo "$f:1:5: warning: Hardcoded Padding Violation: Use Spacing tokens (ds_hardcoded_padding)" ;;
+  error) echo "$f:1:5: error: Force Unwrapping Violation: Avoid force unwrapping (force_unwrapping)"; exit 2 ;;
+  badregex) echo "warning: Invalid regular expression pattern '(' used to configure 'ds_hardcoded_padding' rule." >&2 ;;
+  crash) echo "Fatal error: Could not read configuration" >&2; exit 1 ;;
+  excluded) echo "Error: No lintable files found at paths: '$f'" >&2; exit 1 ;;
+esac
+exit 0
+FAKE
+cp "$PEFAKES/swiftformat" "$NOLINT/swiftformat"
+chmod +x "$PEFAKES"/* "$NOLINT"/*
+
+# $1 project, $2 file, $3 optional fakes dir. Prints "exit=<code>" then stdout+stderr.
+post_edit() {
+  local out code
+  : >"$TOOLLOG"
+  out="$(jq -nc --arg cwd "$1" --arg f "$2" '{cwd: $cwd, tool_name: "Edit", tool_input: {file_path: $f}}' |
+    PATH="${3:-$PEFAKES}:$PATH" FAKE_TOOL_LOG="$TOOLLOG" CLAUDE_PLUGIN_DATA="$TMP/data" CLAUDE_PROJECT_DIR="$1" \
+      "$SCRIPTS/post-edit.sh" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+set_config() { printf '%s\n' "$2" >"$1/.claude/swift-harness.json"; }
+
+P="$(new_project post-edit)"
+F="$P/Sources/App.swift"
+
+set_config "$P" '{"format":"swiftformat","lint":"swiftlint"}'
+expect_result "post-edit: formatter rewrite asks Claude to re-read the file" 0 'Re-read' "$(FAKE_FMT=rewrite post_edit "$P" "$F")"
+expect_result "post-edit: swiftformat failure is reported" 0 'swiftformat failed.*Unexpected token' "$(FAKE_FMT=fail post_edit "$P" "$F")"
+expect_result "post-edit: clean format and lint stay quiet" 0 '^exit=0$' "$(post_edit "$P" "$F")" 'SwiftLint|swiftformat'
+expect_result "post-edit: lint warnings are reported without blocking" 0 'SwiftLint: 1 issue' "$(FAKE_LINT=warn post_edit "$P" "$F")"
+expect_result "post-edit: violation lines use project-relative paths" 0 '\\nSources/App\.swift:1:5: warning' "$(FAKE_LINT=warn post_edit "$P" "$F")" '"//|\\n/'
+expect_result "post-edit: SwiftLint crash is reported" 0 'SwiftLint did not run correctly' "$(FAKE_LINT=crash post_edit "$P" "$F")"
+expect_result "post-edit: invalid SwiftLint rule config (exit 0) is reported" 0 'Invalid regular expression' "$(FAKE_LINT=badregex post_edit "$P" "$F")"
+expect_result "post-edit: file excluded by .swiftlint.yml is not an error" 0 '^exit=0$' "$(FAKE_LINT=excluded post_edit "$P" "$F")" 'did not run|lintable'
+expect_result "post-edit: missing swiftlint stays quiet on each edit" 0 '^exit=0$' "$(post_edit "$P" "$F" "$NOLINT")" 'SwiftLint'
+
+echo 'let v = 1' >"$P/Sources/My View.swift"
+expect_result "post-edit: file name with spaces is reported by its project path" 0 'issue\(s\) in Sources/My View.swift' "$(FAKE_LINT=warn post_edit "$P" "$P/Sources/My View.swift")"
+
+set_config "$P" '{"format":"swift-format","lint":"none"}'
+expect_result "post-edit: swift-format failure is reported" 0 'swift-format failed.*Unexpected token' "$(FAKE_FMT=fail post_edit "$P" "$F")"
+
+set_config "$P" '{"format":"none","lint":"none"}'
+post_edit "$P" "$F" >/dev/null
+if [ ! -s "$TOOLLOG" ]; then ok "post-edit: format and lint set to none run nothing"; else nok "post-edit: format and lint set to none run nothing" "$(cat "$TOOLLOG")"; fi
+
+set_config "$P" '{"format":"swiftformat","lint":"swiftlint","lintBlocking":true}'
+expect_result "post-edit: lintBlocking blocks on lint errors" 2 'Force Unwrapping' "$(FAKE_LINT=error post_edit "$P" "$F")"
+expect_result "post-edit: lintBlocking blocks when SwiftLint crashes" 2 'did not run correctly' "$(FAKE_LINT=crash post_edit "$P" "$F")"
+expect_result "post-edit: lintBlocking blocks on invalid SwiftLint rule config" 2 'Invalid regular expression' "$(FAKE_LINT=badregex post_edit "$P" "$F")"
+expect_result "post-edit: lintBlocking does not block on warnings" 0 'SwiftLint: 1 issue' "$(FAKE_LINT=warn post_edit "$P" "$F")"
+expect_result "post-edit: lintBlocking does not block on an excluded file" 0 '^exit=0$' "$(FAKE_LINT=excluded post_edit "$P" "$F")" 'did not run'
+expect_result "post-edit: lintBlocking also reports a formatter failure" 2 'swiftformat failed' "$(FAKE_FMT=fail FAKE_LINT=error post_edit "$P" "$F")"
+
+mkdir -p "$TMP/outside"
+echo 'let o = 1' >"$TMP/outside/Other.swift"
+out="$(FAKE_FMT=rewrite FAKE_LINT=error post_edit "$P" "$TMP/outside/Other.swift")"
+if [[ "$out" == exit=0* ]] && [ ! -s "$TOOLLOG" ] && [ "$(cat "$TMP/outside/Other.swift")" = 'let o = 1' ]; then
+  ok "post-edit: Swift file outside the project is not formatted or linted"
+else
+  nok "post-edit: Swift file outside the project is not formatted or linted" "$out / tools: $(cat "$TOOLLOG")"
+fi
+
+# ---------- lintBlocking at the Stop check ----------
+
+LOG="$TMP/lint-gate.log"
+gate_stop() { # $1 project, $2 optional extra JSON
+  local out code
+  local extra="${2:-}"
+  [ -n "$extra" ] || extra='{}'
+  out="$(jq -nc --arg cwd "$1" --argjson extra "$extra" '{cwd: $cwd, session_id: "test"} + $extra' |
+    PATH="$PEFAKES:$PATH" FAKE_TOOL_LOG="$TOOLLOG" FAKE_VERIFY_LOG="$LOG" CLAUDE_PLUGIN_DATA="$TMP/data" \
+      CLAUDE_PROJECT_DIR="$1" "$SCRIPTS/stop-verify.sh" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+
+P="$(new_project lint-gate)"
+set_config "$P" '{"format":"none","lint":"swiftlint","lintBlocking":true,"verify":{"command":"scripts/verify.sh fast"}}'
+git -C "$P" commit -qam "lintBlocking on"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+
+echo 'let app = x!' >"$P/Sources/App.swift"
+FAKE_LINT=error post_edit "$P" "$P/Sources/App.swift" >/dev/null
+expect_result "stop: lintBlocking lint errors block the stop even when the build passes" 2 'Force Unwrapping' \
+  "$(FAKE_LINT=error FAKE_VERIFY_EXIT=0 gate_stop "$P")"
+
+echo 'let app = y!' >"$P/Sources/App.swift"
+expect_result "stop: lintBlocking, SwiftLint broken at the stop check blocks" 2 'did not run correctly' \
+  "$(FAKE_LINT=crash FAKE_VERIFY_EXIT=0 gate_stop "$P")"
+
+echo 'let app = 4' >"$P/Sources/App.swift"
+FAKE_LINT=clean post_edit "$P" "$P/Sources/App.swift" >/dev/null
+expect_result "stop: lintBlocking, clean lint and passing build let Claude stop" 0 '^exit=0' "$(FAKE_LINT=clean FAKE_VERIFY_EXIT=0 gate_stop "$P")"
+before="$(wc -l <"$LOG" | tr -d ' ')"
+gate_stop "$P" >/dev/null
+if [ "$(wc -l <"$LOG" | tr -d ' ')" = "$before" ]; then ok "stop: lintBlocking, a pass is recorded and not re-run"
+else nok "stop: lintBlocking, a pass is recorded and not re-run"; fi
+
+echo 'let app = z!' >"$P/Sources/App.swift"
+FAKE_LINT=error post_edit "$P" "$P/Sources/App.swift" >/dev/null
+echo 'let app = 5' >"$P/Sources/App.swift"
+expect_result "stop: lintBlocking, a file fixed outside the Edit tool is re-checked and passes" 0 '^exit=0' \
+  "$(FAKE_LINT=clean FAKE_VERIFY_EXIT=0 gate_stop "$P")"
+
+P="$(new_project lint-off)"
+set_config "$P" '{"format":"none","lint":"swiftlint","verify":{"command":"scripts/verify.sh fast"}}'
+git -C "$P" commit -qam "lint report only"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let app = x!' >"$P/Sources/App.swift"
+FAKE_LINT=error post_edit "$P" "$P/Sources/App.swift" >/dev/null
+expect_result "stop: without lintBlocking, lint errors do not block the stop" 0 '^exit=0' "$(FAKE_LINT=error FAKE_VERIFY_EXIT=0 gate_stop "$P")"
+
+# ---------- worktrees ----------
+
+P="$(new_project wt-main)"
+W="$TMP/wt-feature"
+git -C "$P" worktree add -q "$W" -b feature
+LOG="$TMP/wt.log"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+hook session-start.sh "$W" '{"source":"startup"}' >/dev/null
+echo 'let app = 9' >"$W/Sources/App.swift"
+FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT=1 hook stop-verify.sh "$W" >/dev/null 2>&1
+code=$?
+main_resume="$(hook session-start.sh "$P" '{"source":"resume"}')"
+main_out="$(FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT=1 hook stop-verify.sh "$P" 2>&1)"
+main_code=$?
+if [ "$code" = 2 ] && [ "$main_code" = 0 ] && ! grep -qi 'failed' <<<"$main_resume" && [ "$(wc -l <"$LOG" | tr -d ' ')" = 1 ]; then
+  ok "worktrees: a failure in one worktree does not affect the other"
+else
+  nok "worktrees: a failure in one worktree does not affect the other" "worktree exit=$code main exit=$main_code resume='$main_resume' $main_out"
+fi
+wt_resume="$(hook session-start.sh "$W" '{"source":"resume"}')"
+if grep -qi failed <<<"$wt_resume"; then ok "worktrees: each worktree keeps its own failure state"
+else nok "worktrees: each worktree keeps its own failure state" "${wt_resume:-<empty>}"; fi
+
 # ---------- verify.sh template ----------
 
 FAKES="$TMP/fakes"
@@ -221,12 +418,10 @@ run_verify() { # $1 project, $2 mode; prints "exit=<code>" then output
 expect_verify() { # $1 name, $2 expected exit (0 or nonzero), $3 regex in output, $4 output
   local code="${4%%$'\n'*}"
   code="${code#exit=}"
-  local exit_ok=false
-  if [ "$2" = 0 ]; then [ "$code" = 0 ] && exit_ok=true; else [ "$code" != 0 ] && exit_ok=true; fi
-  if $exit_ok && grep -qE "$3" <<<"$4"; then
-    ok "$1"
+  if [ "$2" != 0 ] && [ "$code" != 0 ]; then
+    expect_result "$1" "$code" "$3" "$4"
   else
-    nok "$1" "$4"
+    expect_result "$1" "$2" "$3" "$4"
   fi
 }
 
