@@ -2,8 +2,13 @@
 # Shared helpers for swift-harness hooks. Sourced, not executed.
 # Every hook is a no-op unless the project contains .claude/swift-harness.json.
 
-# GUI-launched sessions often miss Homebrew on PATH.
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+# GUI-launched sessions often miss Homebrew on PATH. Append it when missing, so tools that
+# are already on PATH keep their order (and the test suite's fake tools stay first).
+for sh_dir in /opt/homebrew/bin /usr/local/bin; do
+  case ":$PATH:" in *":$sh_dir:"*) ;; *) PATH="$PATH:$sh_dir" ;; esac
+done
+unset sh_dir
+export PATH
 
 SH_INPUT="$(cat)"
 
