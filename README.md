@@ -117,7 +117,7 @@ Recommended companion, for type diagnostics after every edit:
 
 | Key | Values | Default |
 |---|---|---|
-| `format` | `swiftformat`, `swift-format`, `none` | `swiftformat` |
+| `format` | `swiftformat`, `swift-format` (needs a `.swift-format` file, see below), `none` | `swiftformat` |
 | `lint` | `swiftlint`, `none` | `swiftlint` |
 | `lintBlocking` | `true` blocks Claude on SwiftLint errors and on SwiftLint failing to run or reporting an invalid configuration, and re-checks those files at the end of the turn; `false` only reports | `false` |
 | `verify.enabled` | run the Stop check | `true` |
@@ -125,6 +125,12 @@ Recommended companion, for type diagnostics after every edit:
 | `verify.maxAttempts` | consecutive failures before Claude may stop | `3` |
 | `protectedPaths` | path prefixes relative to the repo root that require approval before an Edit or Write (`../` and symlinks are resolved, also when the entry itself is a symlink) | `[]` |
 | `guardPbxproj` | ask before edits to `*.pbxproj` | `true` |
+
+With `swift-format`, keep a `.swift-format` file in the repository root (setup creates one). Without it, swift-format applies its defaults, including 2-space indentation, to every file Claude edits, and SessionStart warns about it.
+
+After each Swift edit Claude gets one short line per tool: what the formatter changed (the changed lines, up to 12), and the SwiftLint result, including "no issues" or "excluded", so it can report what was actually checked.
+
+The hooks append `/opt/homebrew/bin` and `/usr/local/bin` to `PATH` when missing, for sessions started from the GUI. Set `SWIFT_HARNESS_EXTRA_PATH` (colon-separated, empty for none) to change that list.
 
 The generated `scripts/verify.sh` runs `swift test` on local packages and an incremental `xcodebuild build` in `fast` mode, and `xcodebuild test` plus strict SwiftLint in `full` mode. It uses a separate DerivedData folder so it never fights with an open Xcode. It never reports PASS without running at least one check: with no scheme and no package it fails with `NOT CONFIGURED`, and a listed package that does not exist is a failure.
 
@@ -144,7 +150,7 @@ docs/
   COMPONENT_REGISTRY.md        one row per shared component, plus "To consolidate"
   adr/0000-template.md
 .swiftlint.yml
-.swiftformat
+.swiftformat or .swift-format    formatter config (4 spaces, 160 columns)
 scripts/verify.sh
 ```
 
