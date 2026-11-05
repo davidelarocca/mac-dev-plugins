@@ -164,14 +164,22 @@ plugins/swift-harness/
   agents/        ui-reviewer
   hooks/         hooks.json
   scripts/       hook scripts (bash + jq)
-tests/run.sh     tests for the hooks and the verify.sh template (bash, git, jq)
+tests/
+  run.sh         hook and verify.sh tests (bash, git, jq; tools are faked)
+  smoke/         the same hooks inside real Claude Code sessions
+  fixtures/      SwiftPM package that compiles the design-system references
+.github/workflows/ci.yml
 ```
 
 ## Updating
 
 Edit the plugin, bump `version` in `plugins/swift-harness/.claude-plugin/plugin.json`, push, then in Claude Code run `/plugin marketplace update mac-dev-plugins`.
 
-Run `tests/run.sh` before pushing. It needs only bash, git and jq: `xcodebuild` and `swift` are faked.
+Run `tests/run.sh` before pushing. It needs only bash, git and jq: `xcodebuild`, `swift` and the formatters are faked.
+
+CI runs on every pull request: `tests/run.sh` with macOS `/bin/bash` 3.2, ShellCheck and JSON validation, and a build of the design-system reference files (`tests/fixtures/design-system`).
+
+Before a release that changes hooks, hook messages or templates, also run the [Claude Code smoke test](tests/smoke/README.md) (`tests/smoke/run.sh`, about $1).
 
 To try local changes without reinstalling:
 
