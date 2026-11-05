@@ -9,5 +9,5 @@
   <rect x="423" y="410" width="244" height="40" rx="20" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.18"/><text x="443" y="436" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" fill="#DCE3F5">Design system workflow</text>
   <rect x="683" y="410" width="160" height="40" rx="20" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.18"/><text x="703" y="436" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" fill="#DCE3F5">Quality gates</text>
   <rect x="859" y="410" width="160" height="40" rx="20" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.18"/><text x="879" y="436" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" fill="#DCE3F5">macOS · Swift</text>
-  <text x="96" y="580" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" fill="#8A93B2">Claude Code plugin  ·  github.com/davidelarocca/mac-dev-plugins</text>
+  <text x="96" y="580" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" fill="#8A93B2">Claude Code plugin  ·  github.com/davidelarocca/swift-harness</text>
 </svg>
