@@ -27,7 +27,7 @@ swift-harness interviene su tre livelli:
 | Subagent | `ui-reviewer` | Review in sola lettura di un diff contro design system, registro e regole di architettura. |
 | Hook | SessionStart | Fissa lo stato di partenza del codice come riferimento (non come verificato), avvisa se l'ultima verifica è fallita sullo stesso codice e segnala strumenti mancanti. |
 | Hook | PreToolUse | Chiede conferma prima che Claude modifichi `project.pbxproj` o un percorso protetto con i tool Edit o Write. Non è una sandbox: vedi [Limiti](#limiti). |
-| Hook | PostToolUse | Formatta e controlla il file Swift appena modificato; i risultati tornano a Claude. |
+| Hook | PostToolUse | Formatta e controlla il file Swift appena modificato (solo file dentro il progetto); risultati del lint, errori del formatter ed errori di configurazione di SwiftLint tornano a Claude. |
 | Hook | Stop | Esegue la verifica veloce prima che Claude chiuda il turno, solo se sono cambiati input della build (codice Swift, impostazioni di progetto e build, risorse). |
 
 Gli hook sono **spenti in ogni progetto che non contiene `.claude/swift-harness.json`**: gli altri progetti non vengono toccati.
@@ -38,6 +38,7 @@ Gli hook sono **spenti in ogni progetto che non contiene `.claude/swift-harness.
 - Codice cambiato e verifica fallita: Claude viene bloccato e riceve le ultime 60 righe dell'output.
 - Claude prova a fermarsi di nuovo senza modificare nulla: può fermarsi, e ricevi un avviso.
 - Dopo `maxAttempts` fallimenti consecutivi (default 3): si ferma e decidi tu.
+- Con `lintBlocking: true`, i file che non hanno passato SwiftLint dopo una modifica vengono ricontrollati qui. Un hook non può annullare una modifica già fatta, quindi è qui che viene intercettata: il turno non risulta superato finché quei file non sono puliti.
 - "Cambiato" vale per ogni input della build: file Swift, `Package.resolved`, `.pbxproj`, `.xcconfig`, plist, entitlements, cataloghi di asset e stringhe, cartelle `Resources/`, snapshot di riferimento, `scripts/`, configurazione di lint e dell'harness. `.build` e DerivedData sono ignorati.
 - Un fallimento sopravvive a una nuova sessione: all'avvio o al resume Claude viene avvisato se l'ultima verifica è fallita sul codice attuale.
 - Funziona per worktree, quindi agenti paralleli verificano ciascuno la propria copia.
@@ -85,9 +86,9 @@ In Claude Code:
 ```
 
 - `format`: `swiftformat`, `swift-format` (quello di Apple, incluso in Xcode) o `none`.
-- `lintBlocking`: `true` blocca Claude sugli errori SwiftLint invece di passargli solo il report. Da attivare a migrazione finita.
+- `lintBlocking`: `true` blocca Claude sugli errori SwiftLint, e anche quando SwiftLint non riesce a girare o segnala una configurazione non valida; quei file vengono ricontrollati a fine turno. Con `false` Claude riceve solo il report. Da attivare a migrazione finita.
 - `verify.command`: qualsiasi comando; codice di uscita 0 significa verifica superata.
-- `protectedPaths`: prefissi relativi alla radice del repository che richiedono conferma prima di un Edit o Write (`../` e symlink vengono risolti).
+- `protectedPaths`: prefissi relativi alla radice del repository che richiedono conferma prima di un Edit o Write (`../` e symlink vengono risolti, anche quando la voce stessa è un symlink).
 - `scripts/verify.sh` non dichiara mai PASS senza aver eseguito almeno un controllo: senza scheme né package fallisce con `NOT CONFIGURED`, e un package elencato ma inesistente è un fallimento.
 
 La tabella completa delle opzioni e delle regole SwiftLint è nel [README in inglese](README.md#configuration).

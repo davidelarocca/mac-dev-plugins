@@ -1,5 +1,18 @@
 # Changelog
 
+## swift-harness 1.0.2 (2026-11-05)
+
+Fixes. No configuration changes needed.
+
+- Post-edit: formatter failures (`swiftformat`, `swift-format`) were discarded. They are now reported to Claude with the tool's error output.
+- Post-edit: SwiftLint failures without violations (crash, unreadable config) and configuration problems that SwiftLint only reports on stderr while exiting 0 (invalid rule configuration or regex, which silently disables the rule) are now reported. A file excluded by `.swiftlint.yml` is not treated as an error.
+- `lintBlocking: true` now also blocks on those SwiftLint failures, and the Stop check lints the blocked files again: the turn cannot be recorded as passed while they still fail, even when the build passes.
+- Post-edit: Swift files outside the project are no longer formatted or linted.
+- Guard: a `protectedPaths` entry that is itself a symlink now protects its target too.
+- Hooks: Homebrew folders are appended to `PATH` only when missing, instead of being put in front of the caller's `PATH`.
+- Tests: post-edit, lintBlocking at the Stop check, symlinked protected entries, files outside the repository and worktree state isolation (70 checks). Test helpers now always send valid hook JSON.
+- Checked in real Claude Code sessions (2.1.318, SwiftLint 0.65.1, Apple swift-format): guard, formatter and lint feedback, lintBlocking at edit and at Stop, failing verification.
+
 ## swift-harness 1.0.1 (2026-11-05)
 
 Fixes. No configuration changes needed.
