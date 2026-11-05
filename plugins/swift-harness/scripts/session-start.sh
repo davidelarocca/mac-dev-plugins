@@ -1,6 +1,8 @@
 #!/bin/bash
-# SessionStart (startup|resume|clear): accept the current code state as the baseline,
-# so the Stop hook only verifies what changes during the session, and report missing tools.
+# SessionStart (startup|resume|clear): record the current code state as the session
+# baseline, so the Stop hook only verifies what changes during the session, and report
+# missing tools. The baseline is a starting point, not a verification result: if the last
+# check failed on this exact code, say so.
 
 . "$(dirname "$0")/lib.sh"
 
@@ -11,11 +13,17 @@ if ! sh_has_jq; then
 fi
 sh_init || exit 0
 
+verify_cmd="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
+
 if git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
   state="$(sh_state_dir)" && {
-    sh_fingerprint > "$state/verified"
+    fp="$(sh_fingerprint)"
+    printf '%s' "$fp" > "$state/baseline"
     printf '0' > "$state/failures"
-    rm -f "$state/failed"
+    rm -f "$state/verified" # pre-1.0.1 name of the baseline file
+    if [ -n "$fp" ] && [ "$fp" = "$(cat "$state/failed" 2>/dev/null)" ]; then
+      echo "swift-harness: the last verification ('$verify_cmd') failed on the current code and has not passed since. Treat the project as not verified."
+    fi
   }
 fi
 
@@ -26,7 +34,6 @@ case "$(sh_cfg '.format' 'swiftformat')" in
 esac
 [ "$(sh_cfg '.lint' 'swiftlint')" = "swiftlint" ] && { command -v swiftlint >/dev/null 2>&1 || missing+=("swiftlint"); }
 
-verify_cmd="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
 verify_bin="${verify_cmd%% *}"
 if [ "$(sh_cfg '.verify.enabled' 'true')" = "true" ] && [[ "$verify_bin" == */* ]] && [ ! -x "$SH_ROOT/$verify_bin" ]; then
   echo "swift-harness: verify command '$verify_bin' is missing or not executable. The Stop check will fail until it exists."

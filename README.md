@@ -25,10 +25,10 @@ swift-harness fixes this on three levels:
 | Skill (automatic) | `feature` | Discover, plan, implement, verify, record: the loop for every feature or roadmap step. |
 | Skill (automatic) | `adr` | Records an architecture decision and indexes it. |
 | Subagent | `ui-reviewer` | Read-only review of a UI diff against the design system, the registry and the architecture rules. |
-| Hook | SessionStart | Records the starting code state and reports missing tools. |
-| Hook | PreToolUse | Asks for confirmation before Claude edits `project.pbxproj` or a protected path. |
+| Hook | SessionStart | Records the starting code state as a baseline (not as verified), warns if the last check failed on the same code, and reports missing tools. |
+| Hook | PreToolUse | Asks for confirmation before Claude edits `project.pbxproj` or a protected path with the Edit or Write tools. Not a sandbox: see [Limitations](#limitations). |
 | Hook | PostToolUse | Formats and lints the Swift file just edited; lint results go back to Claude. |
-| Hook | Stop | Runs your fast verification before Claude ends a turn, only when Swift code changed. |
+| Hook | Stop | Runs your fast verification before Claude ends a turn, only when build inputs changed (Swift code, project and build settings, resources). |
 
 Always-on context cost is about 770 tokens per session. Skills load their full instructions only when used.
 
@@ -38,10 +38,12 @@ Every hook is a no-op unless the project contains `.claude/swift-harness.json` (
 
 ### How the end-of-turn check behaves
 
-- Code unchanged since the last successful check: nothing runs.
+- Code unchanged since the session started or since the last successful check: nothing runs. The starting state is a baseline, not a pass: if it was already broken, the first change in the session runs the check and shows it.
 - Code changed and the check fails: Claude is blocked and receives the last 60 lines of output.
 - Claude tries to stop again without changing anything: it may stop, and you get a warning.
 - After `maxAttempts` consecutive failures (default 3): Claude stops and you decide.
+- "Changed" means any build input: Swift files, `Package.resolved`, `.pbxproj`, `.xcconfig`, plists, entitlements, asset and string catalogs, `Resources/` folders, snapshot baselines, `scripts/`, lint and harness config. `.build` and DerivedData are ignored.
+- A failure survives a new session: on startup or resume, Claude is told if the last check failed on the current code.
 - Works per git worktree, so parallel agents each verify their own checkout.
 
 ### The SwiftLint design system rules
@@ -120,10 +122,10 @@ Recommended companion, for type diagnostics after every edit:
 | `verify.enabled` | run the Stop check | `true` |
 | `verify.command` | any shell command, exit 0 means pass | `scripts/verify.sh fast` |
 | `verify.maxAttempts` | consecutive failures before Claude may stop | `3` |
-| `protectedPaths` | path prefixes relative to the repo root that require approval | `[]` |
+| `protectedPaths` | path prefixes relative to the repo root that require approval before an Edit or Write (`../` and symlinks are resolved) | `[]` |
 | `guardPbxproj` | ask before edits to `*.pbxproj` | `true` |
 
-The generated `scripts/verify.sh` runs `swift test` on local packages and an incremental `xcodebuild build` in `fast` mode, and `xcodebuild test` plus strict SwiftLint in `full` mode. It uses a separate DerivedData folder so it never fights with an open Xcode.
+The generated `scripts/verify.sh` runs `swift test` on local packages and an incremental `xcodebuild build` in `fast` mode, and `xcodebuild test` plus strict SwiftLint in `full` mode. It uses a separate DerivedData folder so it never fights with an open Xcode. It never reports PASS without running at least one check: with no scheme and no package it fails with `NOT CONFIGURED`, and a listed package that does not exist is a failure.
 
 ## What the setup generates in your project
 
@@ -155,11 +157,14 @@ plugins/swift-harness/
   agents/        ui-reviewer
   hooks/         hooks.json
   scripts/       hook scripts (bash + jq)
+tests/run.sh     tests for the hooks and the verify.sh template (bash, git, jq)
 ```
 
 ## Updating
 
 Edit the plugin, bump `version` in `plugins/swift-harness/.claude-plugin/plugin.json`, push, then in Claude Code run `/plugin marketplace update mac-dev-plugins`.
+
+Run `tests/run.sh` before pushing. It needs only bash, git and jq: `xcodebuild` and `swift` are faked.
 
 To try local changes without reinstalling:
 
@@ -172,6 +177,8 @@ claude --plugin-dir ./plugins/swift-harness
 - The Swift reference files in the `design-system` skill are examples to adapt, not a library.
 - Snapshot tests render differently across macOS versions. Record and run them on the same OS, and re-record after major updates.
 - The Stop check runs on your machine and takes as long as your fast verification. Keep `fast` under about two minutes.
+- The protected-path guard covers the Edit, Write and MultiEdit tools only. A shell command run through Bash can still change a protected file. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`), and treat the guard as a check against accidental edits, not a sandbox.
+- `verify.command` runs as a shell command in your project. Enabling the plugin means any repository that contains `.claude/swift-harness.json` can run its own commands when Claude ends a turn. Use it on projects you trust.
 
 ## License
 
