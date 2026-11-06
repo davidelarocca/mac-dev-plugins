@@ -157,6 +157,16 @@ sh_protected_list() {
   done | sed 's/  / /' | LC_ALL=C sort -u
 }
 
+# "<sha256> <path>" for every modified or untracked file, "deleted <path>" for deleted ones,
+# sorted: what differs from HEAD, for the checkpoint after a compaction (#10).
+sh_dirty_list() {
+  (
+    cd "$SH_ROOT" || exit 0
+    git ls-files -m -o --exclude-standard -z 2>/dev/null | xargs -0 shasum -a 256 2>/dev/null | sed 's/  / /'
+    git ls-files -d 2>/dev/null | sed 's/^/deleted /'
+  ) | LC_ALL=C sort -u
+}
+
 # Plugin version, from the manifest next to these scripts.
 SH_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)"
 

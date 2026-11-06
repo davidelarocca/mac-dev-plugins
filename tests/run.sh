@@ -2251,6 +2251,47 @@ if jq -e '.hooks.Stop[0].hooks | map(.command) | any(test("protected-watch"))' "
   ok "protected-watch: registered as a Stop hook"
 else nok "protected-watch: registered as a Stop hook"; fi
 
+# ---------- checkpoint after compaction (#10) ----------
+
+compact() { hook session-start.sh "$1" '{"source":"compact"}' 2>&1; }
+P="$(new_project checkpoint)"
+set_config "$P" '{"format":"none","lint":"none","verify":{"command":"scripts/verify.sh fast","maxAttempts":5}}'
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+approve "$P" >/dev/null
+echo '# Project' >"$P/CLAUDE.md"
+git -C "$P" add -A && git -C "$P" commit -qm "docs" >/dev/null 2>&1
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+out="$(compact "$P")"
+expect_result "checkpoint: right after the start, no code changed" 0 'checkpoint after compaction.*Verification: no code changed' "exit=0
+$(printf '%s' "$out" | tr '\n' ' ')"
+echo 'let app = 2' >"$P/Sources/App.swift"
+out="$(compact "$P")"
+expect_result "checkpoint: names the branch and the files changed in the session" 0 'Branch: (main|master); 1 file\(s\) changed in this session: Sources/App\.swift' "exit=0
+$out"
+expect_result "checkpoint: changed code not checked yet is NOT verified" 0 'Verification: NOT verified' "exit=0
+$out"
+expect_result "checkpoint: points to the docs to reread" 0 'Source of truth, reread before relying on memory: CLAUDE\.md' "exit=0
+$out"
+: >"$LOG"
+FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT=1 hook stop-verify.sh "$P" >/dev/null 2>&1
+if [ "$(grep -c . "$LOG")" = 1 ]; then ok "checkpoint: a compaction does not reset the session baseline"
+else nok "checkpoint: a compaction does not reset the session baseline" "verify runs: $(grep -c . "$LOG")"; fi
+expect_result "checkpoint: a failed check on the current code is FAILED" 0 'Verification: FAILED on the current code' "exit=0
+$(compact "$P")"
+echo 'let app = 3' >"$P/Sources/App.swift"
+FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT=0 hook stop-verify.sh "$P" >/dev/null 2>&1
+expect_result "checkpoint: a passed check on the current code is passed" 0 'Verification: passed on the current code' "exit=0
+$(compact "$P")"
+git -C "$P" commit -qam "work" >/dev/null 2>&1
+expect_result "checkpoint: commits made in the session are counted" 0 '1 commit\(s\) since the session started' "exit=0
+$(compact "$P")"
+printf '%s\n' 'echo changed' >>"$P/scripts/verify.sh"
+expect_result "checkpoint: an unapproved verify command is waiting" 0 'Waiting:.*verify command is not approved' "exit=0
+$(compact "$P" | tr '\n' ' ')"
+if jq -e '.hooks.SessionStart[0].matcher | split("|") | index("compact")' "$PLUGIN/hooks/hooks.json" >/dev/null; then
+  ok "checkpoint: session-start runs after a compaction"
+else nok "checkpoint: session-start runs after a compaction"; fi
+
 # ---------- summary ----------
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
