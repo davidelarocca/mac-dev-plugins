@@ -2,6 +2,20 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-06, product map (#30, branch `feat/product-map`)
+
+Claude Code 2.1.318, SwiftLint 0.65.1, Apple Swift 6.4.2. New `product` group, 3 scenarios, **one run each**: **12/12 checks** with the plugin, 5/6 in the baseline (reported, not counted), $0.96. A task manager with projects, tasks, a `Navigator` and a shared `TaskActionsMenu`; the task asks for a "Due Today" list on Home with each task's title and project name.
+
+| Scenario | Checks | Cost |
+|---|---|---|
+| `product-map`: filled `docs/PRODUCT_MAP.md` | 6/6 | $0.35 |
+| `product-map-empty`: the empty map `setup` leaves | 6/6 | $0.42 |
+| `product-map-bare`: no plugin, no docs | 5/6: **the project name is plain secondary `Text`** | $0.19 |
+
+- The baseline missed the defect found in the real app by the product map audit: a related entity shown by name with no way to open it. It did reuse the navigator and the shared menu, which the project page shows one file away; in that menu "Show Project" exists, so the project is reachable with a right-click, not from the name.
+- With the filled map, Claude made the project name a `.link` button to the project, added the row to the map and the registry's "Used by". With the empty map (and without loading `ui-change`), it extracted a shared `TaskRow` from the project page, used it on Home, filled the map from the code and recorded two real gaps it did not fix: the task page has no task actions, projects have no lifecycle.
+- One run per arm on a small app: a signal, not a measurement. Several runs and larger codebases belong to the evals (#8).
+
 ## 2026-11-06, architecture contracts (#13, branch `feat/architecture-contracts`)
 
 Claude Code 2.1.318, SwiftLint 0.65.1, Apple Swift 6.4.2. Full default suite, 13 scenarios: **49/49 invariants**, $1.64. Two new scenarios; the task needs `Engine` from Audio in App, and the contract allows App only DesignSystem.
