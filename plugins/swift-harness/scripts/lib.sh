@@ -200,13 +200,19 @@ sh_lint_pending_remove() {
 # ---------- verify command approval (#6) ----------
 # The Stop hook runs verify.command, which comes from the repository. It runs only after the
 # user approves it with /swift-harness:approve-verify. The approval lives in the per-project
-# state folder, outside the repository, and covers the project path, the command text and
+# state folder, outside the repository, and covers the project path, the command text,
 # the content of every file the command names (scripts/verify.sh, or a script passed to an
-# interpreter). Files the command reads without naming them are not covered.
+# interpreter) and of every file or folder listed in verify.inputs. The command is split on
+# spaces, not parsed as shell: with quotes or shell syntax, the files it runs may not be
+# found, and sh_verify_unparsed says so. Files read without being named are not covered.
 
-# What an approval covers, one line each: "root", "command", then "file <word> <sha256>".
+# Characters that make the command more than space-separated words.
+sh_verify_unparsed() { [[ "$1" == *[\"\'\`\$\;\|\&\<\>\(\)\\]* ]]; }
+
+# What an approval covers, one line each: "root", "command", "file <word> <sha256>", then
+# "input<TAB><path><TAB><sha256 | missing | outside>" for verify.inputs.
 sh_verify_manifest() {
-  local word path
+  local word path input rel sha
   local -a words
   printf 'root %s\ncommand %s\n' "$SH_ROOT" "$1"
   read -ra words <<<"$1"
@@ -222,6 +228,21 @@ sh_verify_manifest() {
     [ -f "$path" ] || continue
     printf 'file %s %s\n' "$word" "$(shasum -a 256 <"$path" | cut -d' ' -f1)"
   done
+  while IFS= read -r input; do
+    [ -n "$input" ] || continue
+    rel="$(sh_relpath "$input")"
+    if [ -z "$rel" ]; then
+      sha=outside
+    elif [ -d "$SH_ROOT/$rel" ]; then
+      # Names and contents of every file in the folder, so added and removed files count.
+      sha="$(cd "$SH_ROOT/$rel" && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+    elif [ -f "$SH_ROOT/$rel" ]; then
+      sha="$(shasum -a 256 <"$SH_ROOT/$rel" | cut -d' ' -f1)"
+    else
+      sha=missing
+    fi
+    printf 'input\t%s\t%s\n' "$input" "$sha"
+  done < <(jq -r '.verify.inputs // [] | if type == "array" then .[] | strings else empty end' "$SH_CONFIG" 2>/dev/null)
 }
 
 sh_verify_digest() { sh_verify_manifest "$1" | shasum -a 256 | cut -d' ' -f1; }

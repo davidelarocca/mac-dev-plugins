@@ -19,7 +19,7 @@ Run from the project root:
 CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" "${CLAUDE_PLUGIN_ROOT}/scripts/approve-verify.sh" --status
 ```
 
-Show the output to the user as it is: project, command, each file with its hash, status.
+Show the output to the user as it is: project, command, each file and input with its hash, status. If there is a `Warning:` line, repeat it in your own words: the approval may not cover the scripts the command runs, and listing them in `verify.inputs` fixes that.
 
 If the user passed `revoke` as the argument (`$ARGUMENTS`), run the same script with `--revoke` instead, show the output, and stop.
 
