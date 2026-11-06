@@ -1,0 +1,17 @@
+{
+  "appearance": "light",
+  "captured": "2026-11-06T18:19:59Z",
+  "contractSize": "200",
+  "locale": "",
+  "os": "27.0",
+  "osBuild": "Version 27.0.1 (Build 26A434)",
+  "platform": "macos",
+  "scale": 1,
+  "screen": "Badge",
+  "size": "200x48",
+  "source": "",
+  "state": "long-text",
+  "test": "/private/tmp/sh-fx/Tests/ScreensTests/SnapshotTests.swift",
+  "approved": "2026-11-06T18:20:09Z",
+  "approvedFrom": "missing"
+}
