@@ -92,7 +92,8 @@ Il costo fisso di contesto è di circa 770 token per sessione; le skill caricano
 - Claude prova a fermarsi di nuovo senza modificare nulla: può fermarsi, e ricevi un avviso.
 - Dopo `maxAttempts` fallimenti consecutivi (default 3): si ferma e decidi tu.
 - Con `lintBlocking: true`, i file che non hanno passato SwiftLint dopo una modifica vengono ricontrollati qui. Un hook non può annullare una modifica già fatta, quindi è qui che viene intercettata: il turno non risulta superato finché quei file non sono puliti.
-- "Cambiato" vale per ogni input della build: file Swift, `Package.resolved`, `.pbxproj`, `.xcconfig`, plist, entitlements, cataloghi di asset e stringhe, cartelle `Resources/`, snapshot di riferimento, `scripts/`, configurazione di lint e dell'harness. `.build` e DerivedData sono ignorati.
+- "Cambiato" vale per ogni input della build: file Swift (compreso `Package.swift`), `Package.resolved`, workspace, `.pbxproj`, `.xcconfig`, plist, entitlements, cataloghi di asset e stringhe, cartelle `Resources/`, tutto ciò che sta nelle cartelle SwiftPM `Sources/` e `Tests/` (risorse, fixture), snapshot di riferimento, `scripts/`, configurazione di lint e dell'harness. `.build`, DerivedData, lo stato utente di Xcode (`xcuserdata`) e `.DS_Store` sono ignorati.
+- Un risultato vale per il codice e per la versione del plugin. Dopo un aggiornamento del plugin, un esito registrato dalla versione precedente non conta più, quindi il codice invariato viene verificato di nuovo una volta.
 - Un fallimento sopravvive a una nuova sessione: all'avvio o al resume Claude viene avvisato se l'ultima verifica è fallita sul codice attuale.
 - Funziona per worktree, quindi agenti paralleli verificano ciascuno la propria copia.
 
@@ -188,6 +189,7 @@ Prossima tappa: **v1.2.0, fiducia e onboarding.** I comandi della repo girano so
 - I file Swift di riferimento della skill `design-system` sono esempi da adattare, non una libreria.
 - Gli snapshot test cambiano tra versioni di macOS: registrali ed eseguili sullo stesso sistema, e rigenerali dopo aggiornamenti importanti.
 - Con Xcode 26, `swift build` e `swift test` copiano il catalogo degli asset di un package senza compilarlo, quindi in quei test i colori del design system non si trovano. Esegui i test che dipendono dai colori con `xcodebuild test`; Xcode 27 compila il catalogo in ogni caso.
+- **"Cambiato" è una lista di pattern di file, non il grafo della build.** In un progetto Xcode con cartelle sincronizzate, una risorsa di un tipo non elencato fuori da `Resources/` (per esempio `App/data.json`) non conta come modifica. Nemmeno una nuova versione di SwiftLint o di Xcode invalida una verifica superata: contano solo il codice e la versione del plugin.
 - La verifica a fine turno gira sulla tua macchina e dura quanto la tua verifica veloce: tieni `fast` sotto i due minuti circa.
 
 ## Contribuire

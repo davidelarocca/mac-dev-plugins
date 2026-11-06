@@ -32,7 +32,7 @@ checks=""
 [ "$run_verify" = "true" ] && checks="$command_line"
 { [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ]; } && checks="${checks:+$checks + }SwiftLint (lintBlocking)"
 
-fp="$(sh_fingerprint)"
+fp="$(sh_identity)"
 [ "$fp" = "$(cat "$state/passed" 2>/dev/null)" ] && exit 0
 [ "$fp" = "$(cat "$state/baseline" 2>/dev/null)" ] && exit 0
 
