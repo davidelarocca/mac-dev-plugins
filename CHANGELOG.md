@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- New: platforms in the verify script ([#40](https://github.com/davidelarocca/swift-harness/issues/40), first part). The generated `scripts/verify.sh` has `PLATFORMS` (`"macOS"`, `"iOS"` or both) and `IOS_SIMULATOR`. `fast` builds the scheme for each platform, iOS for any simulator without booting one; `full` runs the tests on each, iOS on the named simulator. The result names the platforms checked and, on a failure, the ones that failed. A listed platform that got no build or test (packages only, since `swift test` runs on this Mac) gives `PARTIAL`, never `PASS`, with exit 0. An unknown platform, a scheme with no platform, or iOS tests without a simulator are `NOT CONFIGURED`. `/swift-harness:doctor` reads the platforms from `project.pbxproj` (`SUPPORTED_PLATFORMS`, `SDKROOT`) and `Package.swift` (`platforms:`) and warns when one is not built by the verify script, or is one it cannot build yet (visionOS, tvOS, watchOS, Mac Catalyst); it fails when `IOS_SIMULATOR` is empty or not an available simulator. `setup` detects the platforms and fills both settings. **Existing projects:** a verify script generated before this release has no `PLATFORMS` and keeps building for macOS; doctor reads it as macOS. The README still says macOS: iOS support is checked on a real app before that changes.
+
 ## swift-harness 1.4.1 (2026-11-06)
 
 A fix from the real-app check of the layout contract.

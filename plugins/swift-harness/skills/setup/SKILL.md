@@ -22,7 +22,7 @@ Collect, and show the user a short summary:
 
 - Project type: `.xcworkspace`, `.xcodeproj`, `Package.swift`, local packages under `Packages/` or similar.
 - Schemes and targets: `xcodebuild -list -json` (workspace or project as appropriate).
-- Swift version and minimum macOS version (build settings or `Package.swift`).
+- Swift version, platforms and minimum versions: `SUPPORTED_PLATFORMS` and `SDKROOT` in `project.pbxproj` (or `xcodebuild -showBuildSettings -scheme <scheme>`), `platforms:` in each `Package.swift`. If iOS is among them, pick the simulator for iOS tests from `xcrun simctl list devices available`: the newest iPhone listed.
 - Whether the Xcode project uses synchronized folders: search `project.pbxproj` for `PBXFileSystemSynchronizedRootGroup`. If present, new files do not touch `project.pbxproj`.
 - Existing instruction files: `CLAUDE.md`, `.claude/CLAUDE.md`, `AGENTS.md`, `.claude/rules/`, `.claude/settings.json`.
 - Existing docs: hub and spoke docs, roadmap, step plans, any architecture or design notes.
@@ -69,7 +69,7 @@ Rules for filling templates:
 
 - Fill `paths:` globs in the rules with the real folder layout found in step 2.
 - Fill the SwiftLint `excluded` regex for custom rules with the real design system path.
-- In `verify.sh`: `{{LOCAL_PACKAGES}}` becomes quoted paths (`"Packages/DesignSystem" "Packages/Domain"`) or nothing for `PACKAGES=()`; `{{SCHEME}}` and `{{XCODE_CONTAINER_FLAG}}` become empty strings for a packages-only project. At least one of the two must be set: with neither, the script reports `NOT CONFIGURED` and fails.
+- In `verify.sh`: `{{LOCAL_PACKAGES}}` becomes quoted paths (`"Packages/DesignSystem" "Packages/Domain"`) or nothing for `PACKAGES=()`; `{{SCHEME}}` and `{{XCODE_CONTAINER_FLAG}}` become empty strings for a packages-only project. At least one of the two must be set: with neither, the script reports `NOT CONFIGURED` and fails. `{{PLATFORMS}}` becomes the quoted platforms the scheme builds, `"macOS"`, `"iOS"` or `"macOS" "iOS"` (only these two are supported; name any other platform found in step 2 in the summary as not verified). `{{IOS_SIMULATOR}}` becomes the simulator picked in step 2, or an empty string without iOS. A packages-only project that lists iOS gets `PARTIAL`, never `PASS`, because `swift test` runs on this Mac only: say so in the summary.
 - Keep CLAUDE.md under 100 lines. Link to docs, do not copy them.
 - If the project has existing hub and spoke docs, make `docs/ARCHITECTURE.md` the hub that links to them. Do not move or rewrite the existing docs in this step; list outdated ones as follow-ups.
 - Populate `COMPONENT_REGISTRY.md` only with components that really exist and are shared. Unknown or duplicated ones go in the "To consolidate" section, design system views not meant for reuse (galleries, building blocks) under "Internal". Do not invent entries. Keep the column headers: the end-of-turn check reads them, and fails when a File does not exist or does not declare its Name.
