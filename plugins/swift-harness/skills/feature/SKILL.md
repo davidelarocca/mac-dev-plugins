@@ -20,8 +20,9 @@ Read only what the change needs:
 1. `CLAUDE.md` is already loaded. Follow its links only where relevant.
 2. The feature spec or step document the user points to.
 3. `docs/COMPONENT_REGISTRY.md` if the change has any UI.
-4. The ADRs that touch the modules involved.
-5. The actual code of the modules involved, and the callers of anything you plan to change.
+4. `docs/PRODUCT_MAP.md` if the change shows an entity somewhere, adds an entity, or adds something the user creates or organizes.
+5. The ADRs that touch the modules involved.
+6. The actual code of the modules involved, and the callers of anything you plan to change.
 
 Then state in a few lines: what exists already, what the docs say that the code contradicts (if anything), and what you will reuse.
 
@@ -30,6 +31,7 @@ Then state in a few lines: what exists already, what the docs say that the code 
 - Files to create and modify, grouped by module.
 - New dependencies between modules, if any, and why.
 - UI decisions per the `ui-change` skill (reuse, extend, create).
+- Product coherence, when the map applies: for each place an entity appears, how the user opens it, which related entities shown there are reachable, and which actions it offers. For a new entity: its destination, relations and action set. For a user-managed collection: create, rename, reorder, delete, undo. Anything left out is stated, not silent.
 - Risks, including anything in protected paths.
 - Tests to add or update, and how the result will be verified.
 
@@ -53,6 +55,7 @@ For changes that cross modules or touch protected paths, present the plan and wa
 In the same change:
 
 - `docs/COMPONENT_REGISTRY.md` for any UI component added, extended or retired.
+- `docs/PRODUCT_MAP.md` for any entity, appearance, relation, action or collection added or changed, and for deliberate exceptions.
 - The feature or step document: mark what is done, note deviations from the plan and why.
 - `docs/ARCHITECTURE.md` if a module, dependency or data flow changed.
 - An ADR (via the `adr` skill) if you made a decision a future session could otherwise reopen.

@@ -56,3 +56,4 @@ Write `docs/audit/YYYY-MM-DD-audit.md` with:
 
 - Seed `docs/COMPONENT_REGISTRY.md` "To consolidate" table from the inventory, if the file exists and the user agrees.
 - Do not start the migration in the same session. Suggest a branch per migration step.
+- This audit looks at code health, not at how screens connect. For navigation dead ends, missing links between related entities and lifecycle gaps, suggest `/swift-harness:product-map`.

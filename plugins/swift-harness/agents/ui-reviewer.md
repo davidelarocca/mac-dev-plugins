@@ -14,7 +14,7 @@ You get a list of changed files or a git range. If you get neither, review `git 
 ## Read first
 
 - `CLAUDE.md`, `.claude/rules/*.md`
-- `docs/DESIGN_SYSTEM.md`, `docs/COMPONENT_REGISTRY.md`, `docs/ARCHITECTURE.md` if present
+- `docs/DESIGN_SYSTEM.md`, `docs/COMPONENT_REGISTRY.md`, `docs/PRODUCT_MAP.md`, `docs/ARCHITECTURE.md` if present
 - `.claude/swift-harness.json` for protected paths
 
 ## Check
@@ -27,6 +27,7 @@ You get a list of changed files or a git range. If you get neither, review `git 
 6. **Registry.** Shared components added, extended or removed without a matching update in `docs/COMPONENT_REGISTRY.md`.
 7. **Protected paths.** Any change inside protected paths, flagged for explicit human review.
 8. **macOS conventions.** Keyboard access, focus, accessibility labels, Reduce Motion handling for moving content.
+9. **Product coherence.** For each entity the change displays: can the user open its destination from there? Are related entities shown with it (container, owner, category) reachable, or plain text, especially text styled like a link? Does it offer the entity's action set through the shared menu or command, or a smaller ad hoc one? For collections the user creates: create, rename, reorder, delete, undo. Compare with `docs/PRODUCT_MAP.md`, or with existing appearances of the same entity if there is no map. Skip what the map lists under "Exceptions". Flag a map not updated with the change.
 
 ## Report
 
@@ -34,6 +35,6 @@ Return only this:
 
 - Verdict: `pass`, `pass with notes`, or `changes needed`.
 - Findings, most severe first: severity (high, medium, low), `file:line`, what is wrong, the concrete fix (for duplicates, name the existing component to use).
-- Registry updates needed, as ready-to-paste table rows.
+- Registry and product map updates needed, as ready-to-paste table rows.
 
 No praise, no restating the diff. If something could not be checked, say which and why.

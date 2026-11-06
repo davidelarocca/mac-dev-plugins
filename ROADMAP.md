@@ -14,6 +14,7 @@ Turn the architecture written in your docs into checks.
 |---|---|---|
 | 🧱 | **Architecture contracts for SwiftPM projects.** Declare which modules may depend on which; adding an undeclared dependency to `Package.swift` fails verification. It reads the real dependency graph, with no guessing from source text. | [#13](https://github.com/davidelarocca/swift-harness/issues/13) |
 | 🧪 | **Test the problem itself.** A real-session scenario where Claude must reuse an existing toast instead of building a second one. | [#19](https://github.com/davidelarocca/swift-harness/issues/19) |
+| 🧭 | **A product map Claude works from.** `/swift-harness:product-map` maps entities, their pages, where each one appears, relations and actions from the code, and lists the gaps: items you cannot open from where they are shown, related items shown as plain text, lists you cannot rename or reorder. The map then guides every UI change and review. | [#30](https://github.com/davidelarocca/swift-harness/issues/30) |
 | 🗂️ | **A component registry that stays true.** Stale paths, missing entries and removed components are caught automatically. | [#7](https://github.com/davidelarocca/swift-harness/issues/7) |
 
 ## Later
