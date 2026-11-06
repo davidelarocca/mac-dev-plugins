@@ -67,7 +67,7 @@ flowchart LR
 
 | Type | Name | What it does |
 |---|---|---|
-| Skill (you run it) | `/swift-harness:setup` | Bootstraps or retrofits a project: `CLAUDE.md`, `.claude/rules/`, `docs/` (architecture hub, design system, component registry, product map, ADR template), `.swiftlint.yml`, formatter config, `scripts/verify.sh`, hook config. Never overwrites existing files. |
+| Skill (you run it) | `/swift-harness:setup` | Bootstraps or retrofits a project: `CLAUDE.md`, `.claude/rules/`, `docs/` (architecture hub, design system, component registry, product map, layout contract, ADR template), `.swiftlint.yml`, formatter config, `scripts/verify.sh`, hook config. Never overwrites existing files. |
 | Skill (you run it) | `/swift-harness:approve-verify` | Shows the project's verify command and the files it runs, then approves it for the end-of-turn check. Only you can run it. `/swift-harness:approve-verify revoke` removes the approval. |
 | Skill (you run it) | `/swift-harness:doctor` | Read-only check of the setup: tools, config keys and values, leftover `{{...}}` placeholders, verify script and approval, formatter config, project structure and the last verification. One PASS / WARN / FAIL row per check, with the fix. Changes no file. |
 | Skill (you run it) | `/swift-harness:audit` | Read-only audit of architecture, UI consistency and code health. Produces a prioritized report and an incremental migration plan. |
@@ -137,6 +137,24 @@ In a project split into SwiftPM targets, the compiler enforces the declared depe
 - `/swift-harness:doctor` shows the result and every component not listed.
 
 Columns are found by their header: the Components table needs Name and File. A registry in another format is reported by doctor and never blocks. "Component" means a top-level, non-private type that conforms to `View`, `ViewModifier`, `Layout`, `Shape`, an AppKit representable or a `*Style` protocol: presenters and other shared types are checked when listed, but not detected when missing. List views that are not for reuse (galleries, building blocks) under Internal. Which component a feature should reuse is still Claude's judgment, guided by the registry and the `ui-change` skill.
+
+</details>
+
+<details>
+<summary><b>Screens that hold up at every window size</b></summary>
+
+Claude builds a screen at the size of its preview. `docs/LAYOUT_CONTRACT.md` gives each main screen the sizes it must hold: Min, Default, Max, a width below which it switches to a compact layout and what changes there, and the popovers and windows it opens. The project's tests measure it:
+
+```swift
+#expect(LayoutContract.check("LibraryView") { LibraryView() } == [])     // the content
+#expect(LayoutContract.check("LibraryWindow") { LibraryWindow() } == []) // the window that shows it
+```
+
+- `LayoutContract.check` (copied by setup into a test target from `templates/tests/LayoutContract.swift`) proposes each size of the row to the view with `NSHostingController.sizeThatFits(in:)` and reports any size where the content needs more room: "at 560x400 it needs 857 pt of width". For the window, it checks the declared minimum is Min, so the window neither shrinks to nothing nor stops above Min, and that it does not grow past Max. These tests run in `scripts/verify.sh`, so a layout that breaks blocks the end of the turn like any failing test.
+- At the end of each turn, `scripts/layout.sh` checks the contract itself: every View exists in its File, every Window is declared, every one is measured by a test, sizes are sizes. It reads Markdown and Swift files as text, so it runs without the verify approval.
+- After Claude edits a file that draws a screen in the contract, a note gives its sizes. `ui-change`, the UI rule and `ui-reviewer` read the contract; the reviewer checks what the tests cannot see.
+
+The content is measured without the window's frame: a `.frame(minWidth:)` around a view hides content wider than the frame, so the window's minimum belongs to a small window view, measured on its own. Not measured: truncated text, overlaps, and where popovers open; those are review checks, and screenshot review comes next ([#35](https://github.com/davidelarocca/swift-harness/issues/35)).
 
 </details>
 
@@ -224,6 +242,9 @@ On Claude Code 2.1.275 or later, the first two lines can be one: `/plugin instal
   "guardPbxproj": true,
   "registry": {
     "sources": ["Packages/DesignSystem/Sources"]
+  },
+  "layout": {
+    "enabled": true
   }
 }
 ```
@@ -242,6 +263,8 @@ On Claude Code 2.1.275 or later, the first two lines can be one: `/plugin instal
 | `registry.enabled` | check the component registry at the end of the turn, when the file exists | `true` |
 | `registry.path` | the component registry, relative to the repo root | `docs/COMPONENT_REGISTRY.md` |
 | `registry.sources` | design system folders where views, modifiers and styles missing from the registry are looked for | `[]` |
+| `layout.enabled` | check the layout contract at the end of the turn, when the file exists | `true` |
+| `layout.path` | the layout contract, relative to the repo root; `LayoutContract.check` reads it from the same config | `docs/LAYOUT_CONTRACT.md` |
 
 With `swift-format`, keep a `.swift-format` file in the repository root (setup creates one). Without it, swift-format applies its defaults, including 2-space indentation, to every file Claude edits, and SessionStart warns about it.
 
@@ -266,6 +289,8 @@ docs/
   ARCHITECTURE.md              hub: modules, data flow, protected areas, links
   DESIGN_SYSTEM.md             principles, tokens, interaction patterns
   COMPONENT_REGISTRY.md        one row per shared component, plus "To consolidate"
+  PRODUCT_MAP.md               entities, their pages, relations and actions
+  LAYOUT_CONTRACT.md           window sizes each main screen must hold
   adr/0000-template.md
 .swiftlint.yml
 .swiftformat or .swift-format  formatter config (4 spaces, 160 columns)
@@ -282,6 +307,7 @@ Next up: **v1.4.0, visual coherence.** Window behavior at every size, a design r
 
 - **The verify approval covers what the command names, not everything it reads.** The command is split on spaces, not parsed as shell: with quotes or shell syntax and no `verify.inputs`, the approval shows as `approved, partial coverage` (also in `/swift-harness:doctor`), and listing the scripts in `verify.inputs` covers them. An input outside the project, or a folder with a link that leads outside it, cannot be covered, so the approval is refused. A `Makefile` behind `make verify`, or a script that `verify.sh` sources, can change without a new approval. Approving also means trusting the project's build (Xcode Run Script phases, SwiftPM manifests and plugins). See [SECURITY.md](SECURITY.md).
 - **The registry check is about entries, not reuse.** It proves each entry points to a real declaration and finds unlisted views, modifiers, layouts and styles in `registry.sources`. It does not decide whether a new view duplicates an existing one. Editing only the registry also re-runs the fast verification at the end of the turn, since the registry is part of the checked state.
+- **The layout contract measures room, not looks.** It proves a screen does not need more space than its window gives at each size, and that the window declares its sizes. Text that truncates, content that overlaps and popovers that open outside the window are left to review. The measuring tests cannot run in a test target hosted by a sandboxed app, which cannot read `docs/`: use a package or unhosted test target, or pass `contract:`. macOS only for now; iOS size classes come with [#40](https://github.com/davidelarocca/swift-harness/issues/40).
 - **Architecture contracts cover SwiftPM targets only.** Dependencies between Xcode targets, and imports that the build allows through a transitive dependency, are not checked.
 - **The protected-path guard is not a sandbox.** It covers the Edit, Write and MultiEdit tools only; a shell command run through Bash can still change a protected file. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`).
 - The Swift reference files in the `design-system` skill are examples to adapt, not a library.

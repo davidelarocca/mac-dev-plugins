@@ -877,6 +877,18 @@ for f in "$TEMPLATES/CLAUDE.md" "$TEMPLATES/rules/ui-features.md" "$SKILLS/featu
 done
 if [ -z "$bad" ]; then ok "product-map: CLAUDE.md, the UI rule, feature, ui-change and ui-reviewer consult the map"
 else nok "product-map: CLAUDE.md, the UI rule, feature, ui-change and ui-reviewer consult the map" "$bad"; fi
+bad=""
+for f in "$TEMPLATES/CLAUDE.md" "$TEMPLATES/docs/ARCHITECTURE.md" "$TEMPLATES/rules/ui-features.md" "$SKILLS/ui-change/SKILL.md" "$PLUGIN/agents/ui-reviewer.md"; do
+  grep -qF 'docs/LAYOUT_CONTRACT.md' "$f" || bad="$bad ${f#"$PLUGIN"/}"
+done
+if [ -z "$bad" ]; then ok "layout: CLAUDE.md, ARCHITECTURE.md, the UI rule, ui-change and ui-reviewer consult the contract"
+else nok "layout: CLAUDE.md, ARCHITECTURE.md, the UI rule, ui-change and ui-reviewer consult the contract" "$bad"; fi
+if grep -qF '| `tests/LayoutContract.swift` |' "$SKILLS/setup/SKILL.md"; then ok "layout: setup installs the measuring helper"
+else nok "layout: setup installs the measuring helper"; fi
+if [ "$(readlink "$HERE/fixtures/layout/Tests/ScreensTests/LayoutContract.swift")" = "../../../../../plugins/swift-harness/skills/setup/templates/tests/LayoutContract.swift" ] &&
+  cmp -s "$HERE/fixtures/layout/Tests/ScreensTests/LayoutContract.swift" "$TEMPLATES/tests/LayoutContract.swift"; then
+  ok "layout: the Swift fixture measures with the template helper itself"
+else nok "layout: the Swift fixture measures with the template helper itself"; fi
 
 # ---------- verify.sh template ----------
 
@@ -1490,6 +1502,218 @@ EOF
 out="$(registry missing "$R")"
 expect_result "registry: a conformance on the next line is detected" 0 'MultiLine	Sources/DesignSystem/Edge\.swift:3' "$out"
 expect_result "registry: declarations in comments and extensions are not components" 0 'MultiLine' "$out" 'Commented|InBlockComment|Badge'
+
+# The ID column is optional. read with a tab IFS merges empty cells, so a registry without
+# IDs had its Name read as the ID and its File as the Name.
+R="$(registry_project registry-no-id)"
+cat >"$R/$REG_FILE" <<'EOF'
+# Component registry
+
+## Components
+
+| Name | File |
+|---|---|
+| PillCenter | Sources/DesignSystem/PillCenter.swift |
+| Badge | Sources/DesignSystem/Badge.swift |
+EOF
+expect_result "registry: a registry without an ID column passes" 0 '^exit=0$' "$(registry check "$R")"
+reg_edit "$R" 's#DesignSystem/Badge.swift#DesignSystem/Gone.swift#'
+expect_result "registry: without IDs, a stale path names the component" 1 ':8: Badge: Sources/DesignSystem/Gone\.swift does not exist' "$(registry check "$R")"
+expect_result "registry: without IDs, entries names the component" 0 '^PillCenter$' "$(registry entries "$R" Sources/DesignSystem/PillCenter.swift)"
+
+# ---------- layout contract (#34) ----------
+
+# A window screen with its content, a pane, and the tests that measure them. Sources need not
+# compile: layout.sh reads them as text. The measuring itself is tested on the Swift fixture
+# tests/fixtures/layout, in CI.
+layout_project() { # $1 name
+  local p
+  p="$(new_project "$1")"
+  mkdir -p "$p/Sources/App" "$p/Tests/AppTests" "$p/docs"
+  cat >"$p/Sources/App/Library.swift" <<'EOF'
+import SwiftUI
+
+struct LibraryView: View {
+    var body: some View { List { Text("Item") } }
+}
+
+struct LibraryWindow: View {
+    var body: some View { LibraryView().frame(minWidth: 640, minHeight: 400) }
+}
+EOF
+  cat >"$p/Sources/App/Inspector.swift" <<'EOF'
+import SwiftUI
+
+struct InspectorPane: View {
+    var body: some View { Text("Details") }
+}
+EOF
+  cat >"$p/Tests/AppTests/LayoutTests.swift" <<'EOF'
+import Testing
+@testable import App
+
+@MainActor struct LayoutTests {
+    @Test func library() { #expect(LayoutContract.check("LibraryView") { LibraryView() } == []) }
+    @Test func window() { #expect(LayoutContract.check( "LibraryWindow") { LibraryWindow() } == []) }
+    @Test func inspector() { #expect(LayoutContract.check("InspectorPane") { InspectorPane() } == []) }
+}
+EOF
+  cat >"$p/docs/LAYOUT_CONTRACT.md" <<'EOF'
+# Layout contract
+
+## Screens
+
+| Screen | View | File | Window | Min | Default | Max | Compact below | Compact behavior |
+|---|---|---|---|---|---|---|---|---|
+| Library | `LibraryView` | Sources/App/Library.swift | LibraryWindow | 640x400 | 1000x700 | - | 800 | Filters collapse into a menu |
+| Inspector | InspectorPane | `Sources/App/Inspector.swift` | | 260 × 300 | - | 400pt | - | |
+
+## Presented UI
+
+| Element | Opened from | Kind | Size | At the minimum size |
+|---|---|---|---|---|
+| Sort menu | Library | popover | 220x300 | opens inside the window |
+EOF
+  set_config "$p" '{"verify":{"command":"scripts/verify.sh fast","maxAttempts":3}}'
+  git -C "$p" add -A && git -C "$p" commit -qm layout
+  approve "$p" >/dev/null
+  printf '%s' "$p"
+}
+layout() { # layout.sh arguments; prints "exit=<code>" then the output
+  local out code
+  out="$("$SCRIPTS/layout.sh" "$@" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+LAY_FILE=docs/LAYOUT_CONTRACT.md
+lay_edit() { sed -i '' "$2" "$1/$LAY_FILE"; }
+
+L="$(layout_project layout-ok)"
+expect_result "layout: a correct contract passes" 0 '^exit=0$' "$(layout check "$L")"
+expect_result "layout: the summary counts the screens" 0 '2 screens' "$(layout summary "$L")"
+expect_result "layout: entries names the screens of a file, with their sizes" 0 'Library \(LibraryView, min 640x400, compact below 800\)' "$(layout entries "$L" "$L/Sources/App/Library.swift")"
+expect_result "layout: entries is empty for a file without screens" 0 '^exit=0$' "$(layout entries "$L" Sources/App/Other.swift)"
+
+L="$(layout_project layout-stale)"
+git -C "$L" mv Sources/App/Inspector.swift Sources/App/Details.swift
+out="$(layout check "$L")"
+expect_result "layout: a moved file fails, naming the row, the line and the path" 1 'docs/LAYOUT_CONTRACT\.md:8: Inspector \(InspectorPane\): Sources/App/Inspector\.swift does not exist' "$out"
+expect_result "layout: the failure says how to fix it" 1 'same change' "$out"
+
+L="$(layout_project layout-renamed)"
+sed -i '' 's/struct LibraryView:/struct BrowserView:/' "$L/Sources/App/Library.swift"
+expect_result "layout: a view not declared in its file fails" 1 'LibraryView is not declared in Sources/App/Library\.swift' "$(layout check "$L")"
+
+L="$(layout_project layout-window-gone)"
+sed -i '' 's/struct LibraryWindow:/struct MainWindow:/' "$L/Sources/App/Library.swift"
+expect_result "layout: a window view declared nowhere fails" 1 'the window view LibraryWindow is not declared in any Swift file' "$(layout check "$L")"
+
+L="$(layout_project layout-untested)"
+sed -i '' '/inspector()/d; /"LibraryWindow"/d' "$L/Tests/AppTests/LayoutTests.swift"
+out="$(layout check "$L")"
+expect_result "layout: a view no test measures fails, naming the helper call" 1 'Inspector \(InspectorPane\): no test measures InspectorPane\. Add one that calls LayoutContract\.check\("InspectorPane"\)' "$out"
+expect_result "layout: a window no test measures fails too" 1 'no test measures LibraryWindow' "$out"
+echo '// LayoutContract.check("InspectorPane") is planned' >"$L/Tests/AppTests/Notes.md"
+expect_result "layout: only Swift files count as tests" 1 'no test measures InspectorPane' "$(layout check "$L")"
+
+L="$(layout_project layout-sizes)"
+lay_edit "$L" 's/| 640x400 | 1000x700 | - | 800 |/| 640 by 400 | 600x700 | 500 | 600 |/'
+out="$(layout check "$L")"
+expect_result "layout: a Min that is not a size fails" 1 "Min '640 by 400' is not a size" "$out"
+lay_edit "$L" 's/| 640 by 400 |/| 640x400 |/'
+out="$(layout check "$L")"
+expect_result "layout: Default below Min fails" 1 'Default width 600 is smaller than Min width 640' "$out"
+expect_result "layout: Max below Min fails" 1 'Max width 500 is smaller than Min width 640' "$out"
+expect_result "layout: a compact width not above Min fails" 1 'Compact below 600 is not above Min width 640' "$out"
+lay_edit "$L" 's/| 260 × 300 |/| - |/'
+expect_result "layout: an empty Min fails" 1 'Inspector \(InspectorPane\): Min is empty' "$(layout check "$L")"
+
+L="$(layout_project layout-duplicate)"
+lay_edit "$L" '/^| Inspector /a\
+| Library again | LibraryView | Sources/App/Library.swift | | 700x400 | - | - | - | |
+'
+expect_result "layout: a view listed twice fails" 1 'the view LibraryView is listed more than once' "$(layout check "$L")"
+
+L="$(layout_project layout-columns)"
+awk 'BEGIN{FS=OFS="|"} /^\| (Screen|---|Library|Inspector)/ {t=$3; $3=$6; $6=t} {print}' "$L/$LAY_FILE" >"$L/l.tmp" && mv "$L/l.tmp" "$L/$LAY_FILE"
+expect_result "layout: columns are found by their header, in any order" 0 '^exit=0$' "$(layout check "$L")"
+
+L="$(layout_project layout-template)"
+cp "$PLUGIN/skills/setup/templates/docs/LAYOUT_CONTRACT.md" "$L/$LAY_FILE"
+expect_result "layout: the setup template's empty rows pass" 0 '^exit=0$' "$(layout check "$L")"
+expect_result "layout: the setup template has no screens yet" 0 '0 screens' "$(layout summary "$L")"
+
+L="$(layout_project layout-format)"
+printf '# Layout\n\n- Library: at least 640 wide\n' >"$L/$LAY_FILE"
+expect_result "layout: a contract without a Screens table is not checked, and says why" 3 'View, File and Min' "$(layout check "$L")"
+
+L="$(layout_project layout-none)"
+git -C "$L" rm -q "$LAY_FILE"
+expect_result "layout: no contract means nothing to check" 0 '^exit=0$' "$(layout check "$L")"
+
+L="$(layout_project layout-custom-path)"
+mkdir -p "$L/design"
+git -C "$L" mv "$LAY_FILE" design/LAYOUT.md
+sed -i '' 's|Sources/App/Inspector.swift|Sources/App/Gone.swift|' "$L/design/LAYOUT.md"
+set_config "$L" '{"layout":{"path":"design/LAYOUT.md"}}'
+expect_result "layout: layout.path is read" 1 'design/LAYOUT\.md.*Gone\.swift does not exist' "$(layout check "$L")"
+
+expect_result "layout: the Swift fixture's contract passes, every screen measured" 0 '^exit=0$' "$(layout check "$HERE/fixtures/layout")"
+
+# --- in the hooks ---
+
+L="$(layout_project layout-fp)"
+base="$(cd "$L" && jq -nc --arg cwd "$L" '{cwd: $cwd}' | CLAUDE_PROJECT_DIR="$L" bash -c '. "$1/lib.sh"; sh_init; sh_fingerprint' _ "$SCRIPTS")"
+lay_edit "$L" 's/| 640x400 |/| 600x400 |/'
+now="$(cd "$L" && jq -nc --arg cwd "$L" '{cwd: $cwd}' | CLAUDE_PROJECT_DIR="$L" bash -c '. "$1/lib.sh"; sh_init; sh_fingerprint' _ "$SCRIPTS")"
+if [ -n "$base" ] && [ "$base" != "$now" ]; then ok "fingerprint: a contract edit counts, since the layout tests read it"
+else nok "fingerprint: a contract edit counts, since the layout tests read it" "$base / $now"; fi
+
+L="$(layout_project layout-stop)"
+hook session-start.sh "$L" '{"source":"startup"}' >/dev/null
+sed -i '' 's/struct InspectorPane:/struct DetailsPane:/' "$L/Sources/App/Inspector.swift"
+out="$(rstop "$L")"
+expect_result "stop: a layout contract error blocks the turn, with verify passing" 2 'InspectorPane is not declared' "$out"
+expect_result "stop: the layout contract is named in the failure header" 2 'scripts/verify\.sh fast \+ layout contract' "$out"
+lay_edit "$L" 's/| InspectorPane |/| DetailsPane |/'
+sed -i '' 's/"InspectorPane") { InspectorPane()/"DetailsPane") { DetailsPane()/' "$L/Tests/AppTests/LayoutTests.swift"
+expect_result "stop: a contract fix is checked again and passes" 0 '^exit=0' "$(rstop "$L")" 'not declared'
+
+L="$(layout_project layout-stop-unapproved)"
+hook session-start.sh "$L" '{"source":"startup"}' >/dev/null
+echo '# changed' >>"$L/scripts/verify.sh"
+sed -i '' 's/struct InspectorPane:/struct DetailsPane:/' "$L/Sources/App/Inspector.swift"
+expect_result "stop: the layout contract is checked without the verify approval, since it runs no project code" 2 'InspectorPane is not declared' "$(rstop "$L")"
+
+L="$(layout_project layout-stop-format)"
+hook session-start.sh "$L" '{"source":"startup"}' >/dev/null
+printf '# Layout\n\n- Library: at least 640 wide\n' >"$L/$LAY_FILE"
+echo '// changed' >>"$L/Sources/App/Library.swift"
+expect_result "stop: a contract that cannot be read does not block" 0 '^exit=0' "$(rstop "$L")"
+
+L="$(layout_project layout-stop-off)"
+hook session-start.sh "$L" '{"source":"startup"}' >/dev/null
+set_config "$L" '{"verify":{"command":"scripts/verify.sh fast"},"layout":{"enabled":false}}'
+approve "$L" >/dev/null
+sed -i '' 's/struct InspectorPane:/struct DetailsPane:/' "$L/Sources/App/Inspector.swift"
+expect_result "stop: layout.enabled false turns the check off" 0 '^exit=0' "$(rstop "$L")"
+
+L="$(layout_project layout-post-edit)"
+set_config "$L" '{"format":"none","lint":"none"}'
+out="$(post_edit "$L" "$L/Sources/App/Library.swift")"
+expect_result "post-edit: editing a screen's file names its sizes" 0 'Layout contract: Sources/App/Library\.swift draws Library \(LibraryView, min 640x400, compact below 800\)' "$out"
+expect_result "post-edit: a file without screens gets no layout note" 0 '^exit=0' "$(post_edit "$L" "$L/Tests/AppTests/LayoutTests.swift")" 'Layout contract'
+
+L="$(layout_project layout-doctor)"
+expect_row "doctor: a correct layout contract passes" "$(doctor "$L")" PASS 'Layout contract' '2 screens'
+sed -i '' 's/struct InspectorPane:/struct DetailsPane:/' "$L/Sources/App/Inspector.swift"
+expect_row "doctor: a wrong layout contract fails" "$(doctor "$L")" FAIL 'Layout contract' 'InspectorPane is not declared'
+git -C "$L" rm -q "$LAY_FILE"
+expect_row "doctor: no layout contract is info" "$(doctor "$L")" INFO 'Layout contract' 'none'
+set_config "$L" '{"layout":{"enabled":"yes","pth":"x"}}'
+out="$(doctor "$L")"
+expect_row "doctor: a wrong layout value fails the config" "$out" FAIL Config 'layout.enabled must be true or false'
+expect_row "doctor: an unknown layout key warns" "$out" WARN 'Config keys' 'layout.pth'
 
 # ---------- summary ----------
 

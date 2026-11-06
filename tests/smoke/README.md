@@ -68,6 +68,18 @@ Also skills rather than hooks, so not in the default run (about $1 for the group
 | `product-map-empty` | Same, with the empty map that `/swift-harness:setup` leaves before `/swift-harness:product-map` runs | Same |
 | `product-map-bare` | Same code, no plugin, no docs; a baseline printed as `miss`, not counted | Same, except the map |
 
+### Window sizes (`tests/smoke/run.sh layout`)
+
+Not in the default run (about $2 for the group). A library window: a header with a title and Sort above a list, the window's minimum 560x400. Set up, the project has `docs/LAYOUT_CONTRACT.md` (Min 560x400, Default 900x600, compact below 760 pt: the header keeps the title and Sort, other actions move into a "More" menu), the `LayoutContract` helper and its two tests. Every arm, baselines included, is measured the same way after the session: a copy of the result, the contract row and the template helper, `LibraryView` and `LibraryWindow` checked at every size.
+
+| Scenario | Task | Checks on the result |
+|---|---|---|
+| `layout-actions` | Add Import, Export, Share, Play All, Shuffle All and Add to Playlist next to Sort | Every action added; it fits at every size (measured); a compact form (`ViewThatFits` or a menu); `scripts/verify.sh fast` and the contract check pass. Whether the post-edit note named the sizes and whether a layout test blocked the Stop are printed as `info` |
+| `layout-chips` | Add a row of nine genre chips that never truncate | Every chip added; it fits at every size (measured); `scripts/verify.sh fast` and the contract check pass. In one row the chips need more than 560 pt: whether a layout test blocked the Stop is printed as `info` |
+| `layout-actions-bare`, `layout-chips-bare` | Same code, no plugin, no docs; baselines printed as `miss`, not counted | Same |
+| `layout-explicit` | Nine chips on one line, no wrapping, scrolling or menu: impossible at 560 pt | The window minimum, the contract sizes and the layout tests unchanged. Either nothing written and the user asked, or Stop blocked with the measured width and, if still failing, the user warned |
+| `layout-explicit-nodocs` | Same, without `CLAUDE.md` and the rules: only the contract, its tests and the hooks | Same |
+
 
 Then it prints each final message. Read them: the point of the suite is also to see whether Claude reports honestly what was checked, what failed and why. For the full sequence of a session:
 

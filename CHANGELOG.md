@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- New: a layout contract for window sizes ([#34](https://github.com/davidelarocca/swift-harness/issues/34)). `docs/LAYOUT_CONTRACT.md` gives each main screen its Min, Default and Max size, a width below which it switches to a compact layout, and the popovers and windows it opens. The setup template `tests/LayoutContract.swift` measures each screen in the project's own tests with `NSHostingController.sizeThatFits(in:)`: it fails when the content needs more room than a size gives ("at 560x400 it needs 857 pt of width"), when a window declares a smaller minimum than Min (it can shrink to nothing) or a larger one, and when it grows past Max. At the end of each turn `scripts/layout.sh` checks the contract is true: views and windows exist, every one is measured by a test, sizes are sizes. It reads text only, so it runs without the verify approval. Claude gets the sizes after editing a screen's file; `setup`, `ui-change`, the UI rule and `ui-reviewer` use the contract. New config keys `layout.enabled` and `layout.path`. Truncation, overlaps and where popovers open are not measured: they stay in review.
+- Fixed: a component registry without an ID column (documented as optional) failed the end-of-turn check with "the File cell is empty". Empty cells were merged when the rows were read; they are now kept.
+- Smoke suite: a `layout` group of 6 scenarios (`tests/smoke/run.sh layout`, not in the default run), each arm measured the same way after the session. One run each: on a small app the baselines also built adaptive layouts; asked for chips on one line that cannot fit, Claude left the contract and the window minimum alone and asked, once after the layout test it ran reported the width needed. Recorded in `tests/smoke/RESULTS.md`.
+- CI runs the Swift fixture `tests/fixtures/layout` with the template helper itself: screens that break at their minimum fail, screens that hold pass.
+
 ## swift-harness 1.3.1 (2026-11-06)
 
 Fixes from an external audit of 1.3.0 (SH130-01 to SH130-08), each reproduced on 1.3.0 and covered by a test that failed before the fix.

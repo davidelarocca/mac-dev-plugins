@@ -127,6 +127,11 @@ SH_CONTRACT="docs/architecture-contracts.json"
 sh_registry() { local p; p="$(sh_cfg '.registry.path' 'docs/COMPONENT_REGISTRY.md')"; printf '%s' "${p#./}"; }
 sh_registry_on() { [ "$(sh_cfg '.registry.enabled' 'true')" = "true" ] && [ -f "$SH_ROOT/$(sh_registry)" ]; }
 
+# Layout contract (#34), checked by layout.sh and measured by the project's tests. Part of the
+# fingerprint: the tests read it, so an edited contract can change their result.
+sh_layout() { local p; p="$(sh_cfg '.layout.path' 'docs/LAYOUT_CONTRACT.md')"; printf '%s' "${p#./}"; }
+sh_layout_on() { [ "$(sh_cfg '.layout.enabled' 'true')" = "true" ] && [ -f "$SH_ROOT/$(sh_layout)" ]; }
+
 # Plugin version, from the manifest next to these scripts.
 SH_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)"
 
@@ -144,8 +149,8 @@ sh_identity() {
 sh_fingerprint() {
   {
     git -C "$SH_ROOT" rev-parse HEAD 2>/dev/null
-    git -C "$SH_ROOT" diff HEAD -- "${SH_BUILD_INPUTS[@]}" "$(sh_registry)" 2>/dev/null
-    git -C "$SH_ROOT" ls-files -z --others --exclude-standard -- "${SH_BUILD_INPUTS[@]}" "$(sh_registry)" 2>/dev/null |
+    git -C "$SH_ROOT" diff HEAD -- "${SH_BUILD_INPUTS[@]}" "$(sh_registry)" "$(sh_layout)" 2>/dev/null
+    git -C "$SH_ROOT" ls-files -z --others --exclude-standard -- "${SH_BUILD_INPUTS[@]}" "$(sh_registry)" "$(sh_layout)" 2>/dev/null |
       while IFS= read -r -d '' f; do shasum "$SH_ROOT/$f" 2>/dev/null; done
   } | shasum | cut -d' ' -f1
 }
