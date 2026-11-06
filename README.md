@@ -319,7 +319,7 @@ scripts/verify.sh
 
 ## Roadmap
 
-Next up: **v1.4.0, visual coherence.** Window behavior at every size, a design review on screenshots, and visual regression for shared components. Then **v1.5.0, iOS and multiplatform**. See the full [roadmap](ROADMAP.md).
+Next up: **v1.4.0, visual coherence.** Window behavior at every size, a design review on screenshots, and visual regression for shared components. Then **v1.5.0, iOS and multiplatform**, with a read-only porting audit for macOS apps, and **v1.6.0, assisted macOS to iOS porting**. See the full [roadmap](ROADMAP.md).
 
 ## Limitations
 
