@@ -69,6 +69,7 @@ flowchart LR
 |---|---|---|
 | Skill (you run it) | `/swift-harness:setup` | Bootstraps or retrofits a project: `CLAUDE.md`, `.claude/rules/`, `docs/` (architecture hub, design system, component registry, product map, layout contract, ADR template), `.swiftlint.yml`, formatter config, `scripts/verify.sh`, hook config. Never overwrites existing files. |
 | Skill (you run it) | `/swift-harness:approve-verify` | Shows the project's verify command and the files it runs, then approves it for the end-of-turn check. Only you can run it. `/swift-harness:approve-verify revoke` removes the approval. |
+| Skill (you run it) | `/swift-harness:approve-snapshots` | Shows the new images that failing snapshot tests left (with the changed pixels in red), and copies the ones you approve into the baselines folder. Only you can run it: tests never write a baseline. |
 | Skill (you run it) | `/swift-harness:doctor` | Read-only check of the setup: tools, config keys and values, leftover `{{...}}` placeholders, verify script and approval, formatter config, project structure and the last verification. One PASS / WARN / FAIL row per check, with the fix. Changes no file. |
 | Skill (you run it) | `/swift-harness:audit` | Read-only audit of architecture, UI consistency and code health. Produces a prioritized report and an incremental migration plan. |
 | Skill (you run it) | `/swift-harness:product-map` | Read-only map of the product from its code: entities, their pages, every place each one appears, relations, user-managed collections and action sets. Lists the gaps with evidence: items you cannot open from where they are shown, related items shown as plain text, lists you cannot rename or reorder, actions missing in some places. Writes `docs/PRODUCT_MAP.md` after you approve. |
@@ -78,9 +79,9 @@ flowchart LR
 | Skill (automatic) | `adr` | Records an architecture decision and indexes it. |
 | Subagent | `ui-reviewer` | Read-only review of a UI diff against the design system, the registry, the product map and the architecture rules. |
 | Hook | SessionStart | Records the starting code state as a baseline (not as verified), warns if the last check failed on the same code, tells Claude when the verify command is not approved, and reports missing tools. |
-| Hook | PreToolUse | Asks for confirmation before Claude edits `project.pbxproj` or a protected path with the Edit or Write tools. Not a sandbox: see [Limitations](#limitations). |
+| Hook | PreToolUse | Asks for confirmation before Claude edits `project.pbxproj`, a protected path or a snapshot baseline with the Edit or Write tools. Not a sandbox: see [Limitations](#limitations). |
 | Hook | PostToolUse | Formats and lints the Swift file just edited (only files inside the project); lint results, formatter changes and failures, and SwiftLint configuration errors go back to Claude. After a `Package.swift` edit, checks the [architecture contract](#how-it-works). |
-| Hook | Stop | Runs your fast verification and the architecture contract check before Claude ends a turn, only when build inputs changed (Swift code, project and build settings, resources), and only once you approved the command. Tells you if the contract changed during the session. |
+| Hook | Stop | Runs your fast verification and the architecture contract check before Claude ends a turn, only when build inputs changed (Swift code, project and build settings, resources), and only once you approved the command. Tells you if the contract changed during the session. Also tells you when snapshot baselines changed in the session without `/swift-harness:approve-snapshots`, including through shell commands. |
 
 The always-on context cost is about 770 tokens per session. Skills load their full instructions only when they are used. Every hook does nothing in a project without `.claude/swift-harness.json`, so your other projects are untouched.
 
@@ -283,6 +284,7 @@ On Claude Code 2.1.275 or later, the first two lines can be one: `/plugin instal
 | `layout.enabled` | check the layout contract at the end of the turn, when the file exists | `true` |
 | `layout.path` | the layout contract, relative to the repo root; `LayoutContract.check` reads it from the same config | `docs/LAYOUT_CONTRACT.md` |
 | `screenshots.path` | where `Screenshot.capture` saves images and `ui-reviewer` looks for them, relative to the repo root | `.build/swift-harness/screenshots` |
+| `snapshots.path` | the approved snapshot baselines `Snapshot.verify` compares with, inside the repo; only `/swift-harness:approve-snapshots` writes there, and the guard asks before an edit | `snapshots` |
 
 With `swift-format`, keep a `.swift-format` file in the repository root (setup creates one). Without it, swift-format applies its defaults, including 2-space indentation, to every file Claude edits, and SessionStart warns about it.
 
@@ -330,7 +332,7 @@ Next up: **v1.4.0, visual coherence.** Window behavior at every size, a design r
 - **Architecture contracts cover SwiftPM targets only.** Dependencies between Xcode targets, and imports that the build allows through a transitive dependency, are not checked.
 - **The protected-path guard is not a sandbox.** It covers the Edit, Write and MultiEdit tools only; a shell command run through Bash can still change a protected file. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`).
 - The Swift reference files in the `design-system` skill are examples to adapt, not a library.
-- Snapshot tests render differently across macOS versions. Record and run them on the same OS, and re-record after major updates.
+- **Snapshot baselines are pinned to one macOS version and display scale.** Text and controls draw differently on other versions, so on a Mac or runner that differs the images are reported as not compared, not as passed: compare on the Mac the baselines were made on (GitHub's runners usually run an older macOS). On macOS, `dynamicTypeSize` does not change how SwiftUI text is drawn, so larger text is a state the project draws itself. Focus, keyboard navigation and Reduce Motion are not covered by snapshots ([#52](https://github.com/davidelarocca/swift-harness/issues/52)).
 - With Xcode 26, `swift build` and `swift test` copy a package's asset catalog without compiling it, so design-system colors do not resolve in those test runs. Run color-dependent tests with `xcodebuild test`; Xcode 27 compiles the catalog either way.
 - **"Changed" is a list of file patterns, not the build graph.** In an Xcode project with synchronized folders, a resource of an unlisted type outside `Resources/` (say `App/data.json`) does not count as a change. A new SwiftLint or Xcode version does not invalidate a pass either: only the code and the plugin version do.
 - The Stop check runs on your machine and takes as long as your fast verification. Keep `fast` under about two minutes.
@@ -346,7 +348,7 @@ Issues, ideas and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.
 .claude-plugin/marketplace.json
 plugins/swift-harness/
   .claude-plugin/plugin.json
-  skills/        setup, approve-verify, doctor, audit, product-map, ui-change, design-system, feature, adr
+  skills/        setup, approve-verify, approve-snapshots, doctor, audit, product-map, ui-change, design-system, feature, adr
   agents/        ui-reviewer
   hooks/         hooks.json
   scripts/       hook scripts (bash + jq)

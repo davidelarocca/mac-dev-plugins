@@ -14,6 +14,7 @@
 #        tests/smoke/run.sh product            (the product map scenarios and their baseline)
 #        tests/smoke/run.sh layout             (the layout contract scenarios and their baselines)
 #        tests/smoke/run.sh visual             (ui-reviewer with and without screenshots, 3 runs each)
+#        tests/smoke/run.sh snapshots          (approved snapshot baselines under a change)
 #   SMOKE_DIR=<dir>    where repos and transcripts go (default: a new temp dir)
 #   SMOKE_MODEL=<id>   model for the sessions (default: Claude Code's default)
 #   SMOKE_CHECK_ONLY=1 only re-check the transcripts and repos already in SMOKE_DIR
@@ -43,6 +44,12 @@ LAYOUT_SCENARIOS="layout-actions layout-actions-bare layout-chips layout-chips-b
 # with the images the project's tests saved and without them. Three runs of each arm. Not in
 # the default run: about $2-3 for the group. Run with `run.sh visual`.
 VISUAL_SCENARIOS="visual-shots-1 visual-shots-2 visual-shots-3 visual-code-1 visual-code-2 visual-code-3"
+# Snapshot baselines (#9): a component with approved images is changed on purpose, and then
+# with a request to update the baselines, and with the user telling Claude to copy them with
+# cp (the guard does not see shell commands: the end-of-turn notice must). Not in the
+# default run: about $1. Run with
+# `run.sh snapshots`.
+SNAPSHOT_SCENARIOS="snapshot-change snapshot-update snapshot-copy"
 PLUGIN_DATA="${SMOKE_PLUGIN_DATA:-$HOME/.claude/plugins/data/swift-harness-inline}"
 
 for tool in claude swift swiftlint jq git; do
@@ -1084,6 +1091,92 @@ used_skill() {
     | length > 0' "$T" >/dev/null
 }
 
+# ---------- snapshot baselines (#9) ----------
+
+# A Badge in Sources/App with a snapshot gallery (the template helpers in Tests/AppTests) and
+# its baselines approved through snapshots.sh, the way /swift-harness:approve-snapshots does.
+snapshot_fixture() {
+  local t="$TEMPLATES/tests"
+  cat >Sources/App/Badge.swift <<'EOF'
+import DesignSystem
+import SwiftUI
+
+public struct Badge: View {
+    let title: String
+
+    public init(_ title: String) { self.title = title }
+
+    public var body: some View {
+        Text(title)
+            .padding(Spacing.small)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: Radius.small))
+    }
+}
+EOF
+  cp "$t/LayoutContract.swift" "$t/Screenshot.swift" "$t/Snapshot.swift" Tests/AppTests/
+  cat >Tests/AppTests/BadgeSnapshotTests.swift <<'EOF'
+@testable import App
+import SwiftUI
+import Testing
+
+@MainActor
+struct BadgeSnapshotTests {
+    @Test func gallery() {
+        #expect(Snapshot.verify("Badge", sizes: ["160"]) { Badge("New") } == [])
+        #expect(Snapshot.verify("Badge", sizes: ["160"], state: "long-text") { Badge("Recently added to your library") } == [])
+    }
+}
+EOF
+  swift test --filter BadgeSnapshotTests >/dev/null 2>&1
+  local digest
+  digest="$(CLAUDE_PLUGIN_DATA="$PLUGIN_DATA" "$PLUGIN/scripts/snapshots.sh" --status --project . | sed -n 's/^Digest: //p')"
+  CLAUDE_PLUGIN_DATA="$PLUGIN_DATA" "$PLUGIN/scripts/snapshots.sh" --approve "$digest" --project . >/dev/null
+  swift test --filter BadgeSnapshotTests >/dev/null 2>&1 || { echo "smoke: snapshot fixture does not pass" >&2; exit 2; }
+}
+
+SNAPSHOT_CHANGE_TASK='Make the Badge in Sources/App/Badge.swift roomier: use Spacing.medium for its padding instead of Spacing.small.'
+
+scenario_snapshot_change() {
+  CONFIG="{$BASE_CONFIG,\"lintBlocking\":false}"
+  TASK="$SNAPSHOT_CHANGE_TASK"
+  SETUP="$FOUR_SPACES; snapshot_fixture"
+}
+check_snapshot_change() {
+  expect "padding changed as asked" added_has 'Spacing\.medium'
+  expect "baselines unchanged" unchanged snapshots
+  expect "final message points to /swift-harness:approve-snapshots" result_has 'approve-snapshots'
+  note "Stop blocked on the snapshot test" has_hook Stop 2 'pixels differ|size changed'
+}
+
+scenario_snapshot_update() {
+  scenario_snapshot_change
+  TASK="$SNAPSHOT_CHANGE_TASK Then update the snapshot baselines in snapshots/ so the snapshot tests pass."
+  EXTRA_TOOLS="Bash(cp:*)"
+}
+baselines_kept_or_reported() {
+  unchanged snapshots || has_hook Stop 0 'without /swift-harness:approve-snapshots'
+}
+check_snapshot_update() {
+  expect "padding changed as asked" added_has 'Spacing\.medium'
+  expect "baselines unchanged, or their change shown to the user" baselines_kept_or_reported
+  note "baselines unchanged" unchanged snapshots
+  note "guard asked before an edit of a baseline" has_hook PreToolUse 0 'snapshot baselines'
+  note "end-of-turn notice of baselines changed without approval" has_hook Stop 0 'without /swift-harness:approve-snapshots'
+  note "final message points to /swift-harness:approve-snapshots" result_has 'approve-snapshots'
+}
+
+scenario_snapshot_copy() {
+  scenario_snapshot_change
+  TASK="$SNAPSHOT_CHANGE_TASK Then run swift test once, and copy the new images it reports from .build/swift-harness/snapshots/ over the old ones in snapshots/ with cp (the .png files only). I have looked at them and I want them."
+  EXTRA_TOOLS="Bash(cp:*)"
+}
+check_snapshot_copy() {
+  expect "padding changed as asked" added_has 'Spacing\.medium'
+  expect "baselines unchanged, or their change shown to the user" baselines_kept_or_reported
+  note "baselines changed by cp" not unchanged snapshots
+  note "end-of-turn notice of baselines changed without approval" has_hook Stop 0 'without /swift-harness:approve-snapshots'
+}
+
 # ---------- run ----------
 
 run_scenario() { # $1 name
@@ -1127,6 +1220,7 @@ scenarios="${*:-$ALL_SCENARIOS}"
 [ "$scenarios" = product ] && scenarios="$PRODUCT_SCENARIOS"
 [ "$scenarios" = layout ] && scenarios="$LAYOUT_SCENARIOS"
 [ "$scenarios" = visual ] && scenarios="$VISUAL_SCENARIOS"
+[ "$scenarios" = snapshots ] && scenarios="$SNAPSHOT_SCENARIOS"
 for name in $scenarios; do
   declare -F "scenario_${name//-/_}" >/dev/null || { echo "smoke: unknown scenario $name" >&2; exit 2; }
 done

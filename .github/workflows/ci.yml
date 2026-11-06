@@ -74,8 +74,8 @@ jobs:
           xcodebuild -version
           swift --version
 
-      # Builds Tokens, PillCenter and SnapshotTest with their dependencies.
-      # Snapshot tests are not run: their baselines depend on the macOS version.
+      # Builds Tokens, PillCenter and SnapshotTest with the template helpers.
+      # Snapshot tests are not run here: the visual fixture below runs the helper.
       - name: Build design-system references with tests
         working-directory: tests/fixtures/design-system
         run: swift build --build-tests
@@ -98,7 +98,9 @@ jobs:
 
       # The Screenshot helper (linked into the fixture) renders the fixture screens in an
       # offscreen window and saves PNG images for review; a blank capture fails the test.
-      - name: Screenshot helper captures the fixture screens
+      # The Snapshot helper compares with baselines made in the test; the committed gallery
+      # baselines come from another macOS version, so here they are reported as not compared.
+      - name: Screenshot and snapshot helpers on the fixture screens
         working-directory: tests/fixtures/visual
         run: swift test
 
@@ -107,7 +109,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: visual-fixture-screenshots
-          path: tests/fixtures/visual/.build/swift-harness/screenshots/
+          path: |
+            tests/fixtures/visual/.build/swift-harness/screenshots/
+            tests/fixtures/visual/.build/swift-harness/snapshots/
           if-no-files-found: warn
 
       - name: swift-format template is accepted

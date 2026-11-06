@@ -1,6 +1,6 @@
 #!/bin/bash
-# PreToolUse (Edit|Write|MultiEdit): ask the user before Claude edits project.pbxproj
-# or a protected path listed in .claude/swift-harness.json.
+# PreToolUse (Edit|Write|MultiEdit): ask the user before Claude edits project.pbxproj,
+# a protected path listed in .claude/swift-harness.json, or a snapshot baseline.
 # Scope: only the Edit, Write and MultiEdit tools. Shell commands run through Bash are not
 # intercepted, so this is a guard against accidental edits, not a sandbox.
 
@@ -33,6 +33,14 @@ if [ -z "$reason" ] && [ -n "$rel" ]; then
       break
     fi
   done < <(jq -r '.protectedPaths[]? // empty' "$SH_CONFIG" 2>/dev/null)
+fi
+
+# Snapshot baselines (#9): only /swift-harness:approve-snapshots writes them.
+if [ -z "$reason" ] && [ -n "$rel" ]; then
+  snapshots="$(sh_snapshots)"
+  if [ -n "$snapshots" ] && { [ "$rel" = "$snapshots" ] || [[ "$rel" == "$snapshots"/* ]]; }; then
+    reason="swift-harness: $snapshots/ holds the approved snapshot baselines. They change only when the user runs /swift-harness:approve-snapshots after looking at the new images. Approve this edit only if the user asked for it."
+  fi
 fi
 
 [ -n "$reason" ] || exit 0

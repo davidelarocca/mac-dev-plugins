@@ -1,49 +1,36 @@
-import AppKit
-import SnapshotTesting
 import SwiftUI
 import Testing
 @testable import DesignSystem
 
-// Package.swift test target dependency:
-// .product(name: "SnapshotTesting", package: "swift-snapshot-testing")
-
-enum Appearance: String, CaseIterable, Sendable {
-    case light, dark
-
-    var name: NSAppearance.Name { self == .light ? .aqua : .darkAqua }
-}
-
-@MainActor
-private func render(_ view: some View, size: CGSize, appearance: Appearance) -> NSView {
-    let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
-    host.frame = CGRect(origin: .zero, size: size)
-    host.appearance = NSAppearance(named: appearance.name)
-    return host
-}
+// Visual regression for a shared component, with the Snapshot helper from the swift-harness
+// setup templates (tests/Snapshot.swift, next to LayoutContract.swift and Screenshot.swift in
+// this test target). No package dependency. Each call checks light and dark against the
+// baselines in snapshots/; a missing or different image fails the test and waits for the
+// user's approval (/swift-harness:approve-snapshots). The test never writes a baseline.
+//
+// One suite per component is the gallery: every state, long text, a long language and a
+// right-to-left one.
 
 @MainActor
 @Suite("PillView snapshots")
 struct PillViewSnapshotTests {
-    private let size = CGSize(width: 320, height: 60)
-
-    @Test(arguments: Appearance.allCases)
-    func kinds(appearance: Appearance) {
-        let pills: [Pill] = [.info("Info"), .success("Added to library"), .warning("Low disk space"), .error("Import failed")]
-        for pill in pills {
-            assertSnapshot(
-                of: render(PillView(pill: pill), size: size, appearance: appearance),
-                as: .image(precision: 0.99, perceptualPrecision: 0.98),
-                named: "\(pill.kind)-\(appearance.rawValue)"
-            )
-        }
+    @Test(arguments: [Pill.info("Info"), .success("Added to library"), .warning("Low disk space"), .error("Import failed")])
+    func kinds(pill: Pill) {
+        #expect(Snapshot.verify("PillView", sizes: ["320"], state: "\(pill.kind)", source: "Sources/DesignSystem/Components/Pill/PillView.swift") {
+            PillView(pill: pill)
+        } == [])
     }
 
     @Test func longText() {
         let pill = Pill.success(String(repeating: "Very long album title ", count: 6))
-        assertSnapshot(
-            of: render(PillView(pill: pill), size: CGSize(width: 320, height: 90), appearance: .light),
-            as: .image(precision: 0.99, perceptualPrecision: 0.98)
-        )
+        #expect(Snapshot.verify("PillView", sizes: ["320"], state: "long-text") { PillView(pill: pill) } == [])
+    }
+
+    @Test(arguments: ["de", "ar"])
+    func localized(locale: String) {
+        #expect(Snapshot.verify("PillView", sizes: ["320"], state: "success", locale: locale) {
+            PillView(pill: .success("Added to library"))
+        } == [])
     }
 }
 
