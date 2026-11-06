@@ -17,7 +17,7 @@ verify_cmd="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
 
 if git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
   state="$(sh_state_dir)" && {
-    fp="$(sh_fingerprint)"
+    fp="$(sh_identity)"
     printf '%s' "$fp" > "$state/baseline"
     printf '0' > "$state/failures"
     rm -f "$state/verified" # pre-1.0.1 name of the baseline file
