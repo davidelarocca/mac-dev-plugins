@@ -651,7 +651,7 @@ snapshot() { (cd "$1" && find . -print | sort && find . -type f -exec shasum {} 
 
 P="$(new_project doctor-ok)"
 cp "$TEMPLATE" "$P/scripts/verify.sh"
-sed -i '' -e 's/{{XCODE_CONTAINER_FLAG}}//' -e 's/{{SCHEME}}//' -e 's|{{LOCAL_PACKAGES}}|"Packages/Core"|' "$P/scripts/verify.sh"
+sed -i '' -e 's/{{XCODE_CONTAINER_FLAG}}//' -e 's/{{SCHEME}}//' -e 's|{{LOCAL_PACKAGES}}|"Packages/Core"|' -e 's/{{PLATFORMS}}/"macOS"/' -e 's/{{IOS_SIMULATOR}}//' "$P/scripts/verify.sh"
 mkdir -p "$P/Packages/Core"
 echo '// swift-tools-version:5.9' >"$P/Packages/Core/Package.swift"
 set_config "$P" '{"format":"swiftformat","lint":"swiftlint","lintBlocking":true,"verify":{"command":"scripts/verify.sh fast","maxAttempts":3},"protectedPaths":["Sources/Audio/"],"guardPbxproj":true}'
@@ -700,7 +700,7 @@ cp "$TEMPLATE" "$P/scripts/verify.sh"
 out="$(doctor "$P")"
 expect_row "doctor: verify.sh with placeholders fails" "$out" FAIL 'Verify script' 'placeholder'
 expect_row "doctor: a changed verify script is not approved" "$out" FAIL 'Verify approval' 'approve-verify'
-sed -i '' -e 's/{{XCODE_CONTAINER_FLAG}}//' -e 's/{{SCHEME}}//' -e 's/{{LOCAL_PACKAGES}}//' "$P/scripts/verify.sh"
+sed -i '' -e 's/{{XCODE_CONTAINER_FLAG}}//' -e 's/{{SCHEME}}//' -e 's/{{LOCAL_PACKAGES}}//' -e 's/{{PLATFORMS}}/"macOS"/' -e 's/{{IOS_SIMULATOR}}//' "$P/scripts/verify.sh"
 expect_row "doctor: verify.sh with no scheme and no package fails" "$(doctor "$P")" FAIL 'Verify script' 'scheme'
 sed -i '' -e 's|^PACKAGES=()|PACKAGES=("Packages/Missing")|' "$P/scripts/verify.sh"
 expect_row "doctor: verify.sh listing a missing package fails" "$(doctor "$P")" FAIL 'Verify script' 'Packages/Missing'
@@ -708,6 +708,91 @@ chmod -x "$P/scripts/verify.sh"
 expect_row "doctor: verify script that is not executable fails" "$(doctor "$P")" FAIL 'Verify script' 'executable'
 set_config "$P" '{"verify":{"enabled":false}}'
 expect_row "doctor: verification turned off is a warning" "$(doctor "$P")" WARN 'Verify script' 'enabled'
+
+# Platforms (#40): read from project.pbxproj and Package.swift, compared with verify.sh.
+SIMFAKES="$TMP/sim-fakes"
+mkdir -p "$SIMFAKES"
+cat >"$SIMFAKES/xcrun" <<'EOF'
+#!/bin/bash
+[ "$1 $2 $3" = "simctl list devices" ] || exit 1
+printf '== Devices ==\n-- iOS 18.2 --\n    iPhone 16 (1A2B3C4D-0000-0000-0000-000000000000) (Shutdown)\n    iPhone 16 Pro (2A2B3C4D-0000-0000-0000-000000000000) (Shutdown)\n'
+EOF
+chmod +x "$SIMFAKES/xcrun"
+pdoctor() { # $1 project
+  local out code
+  out="$(PATH="$SIMFAKES:$PEFAKES:$PATH" CLAUDE_PLUGIN_DATA="$TMP/data" "$SCRIPTS/doctor.sh" "$1" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+platform_project() { # $1 name, $2 PLATFORMS body, $3 IOS_SIMULATOR; an Xcode project with scheme App
+  local p
+  p="$(new_project "$1")"
+  sed -e 's/{{XCODE_CONTAINER_FLAG}}/-project App.xcodeproj/' -e 's/{{SCHEME}}/App/' -e 's/{{LOCAL_PACKAGES}}//' \
+    -e "s/{{PLATFORMS}}/$2/" -e "s/{{IOS_SIMULATOR}}/$3/" "$TEMPLATE" >"$p/scripts/verify.sh"
+  chmod +x "$p/scripts/verify.sh"
+  set_config "$p" '{"format":"none","lint":"none","verify":{"command":"scripts/verify.sh fast"}}'
+  mkdir -p "$p/App.xcodeproj"
+  printf '%s' "$p"
+}
+pbx() { # $1 project, then build setting lines
+  local p="$1"
+  shift
+  printf '// !$*UTF8*$!\n{\n' >"$p/App.xcodeproj/project.pbxproj"
+  printf '\t\t\t\t%s\n' "$@" >>"$p/App.xcodeproj/project.pbxproj"
+  printf '}\n' >>"$p/App.xcodeproj/project.pbxproj"
+}
+
+P="$(platform_project plat-mac-only '"macOS"' '')"
+pbx "$P" 'SDKROOT = macosx;' 'SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";'
+out="$(pdoctor "$P")"
+expect_row "doctor platforms: an iOS target that verify.sh does not build is a warning" "$out" WARN 'Platforms' 'iOS.*not built or tested.*PLATFORMS'
+if grep -q '| iOS simulator |' <<<"$out"; then nok "doctor platforms: no simulator row without iOS in PLATFORMS" "$out"
+else ok "doctor platforms: no simulator row without iOS in PLATFORMS"; fi
+
+P="$(platform_project plat-multi '"macOS" "iOS"' 'iPhone 16')"
+pbx "$P" 'SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";'
+out="$(pdoctor "$P")"
+expect_row "doctor platforms: every project platform checked by verify.sh passes" "$out" PASS 'Platforms' 'macOS, iOS'
+expect_row "doctor platforms: an existing simulator passes" "$out" PASS 'iOS simulator' 'iPhone 16'
+
+P="$(platform_project plat-nosim '"macOS" "iOS"' 'iPhone 99')"
+pbx "$P" 'SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";'
+expect_row "doctor platforms: a simulator that does not exist fails" "$(pdoctor "$P")" FAIL 'iOS simulator' 'iPhone 99.*simctl'
+
+P="$(platform_project plat-emptysim '"iOS"' '')"
+pbx "$P" 'SDKROOT = iphoneos;'
+out="$(pdoctor "$P")"
+expect_row "doctor platforms: SDKROOT iphoneos is detected as iOS" "$out" PASS 'Platforms' 'iOS'
+expect_row "doctor platforms: iOS without IOS_SIMULATOR fails, since full mode cannot test" "$out" FAIL 'iOS simulator' 'IOS_SIMULATOR'
+
+P="$(platform_project plat-unknown '"macOS" "Android"' '')"
+pbx "$P" 'SDKROOT = macosx;'
+expect_row "doctor platforms: an unknown platform in verify.sh fails" "$(pdoctor "$P")" FAIL 'Platforms' 'Android'
+
+P="$(platform_project plat-vision '"macOS"' '')"
+pbx "$P" 'SUPPORTED_PLATFORMS = "macosx xros xrsimulator";'
+expect_row "doctor platforms: a platform verify.sh cannot check is named" "$(pdoctor "$P")" WARN 'Platforms' 'visionOS.*not supported'
+
+P="$(platform_project plat-none '"macOS"' '')"
+expect_row "doctor platforms: nothing declared is reported as such" "$(pdoctor "$P")" INFO 'Platforms' 'none declared.*verify.sh checks macOS'
+
+# A package declaring iOS, verified by swift test only (host macOS).
+P="$(new_project plat-pkg)"
+sed -e 's/{{XCODE_CONTAINER_FLAG}}//' -e 's/{{SCHEME}}//' -e 's|{{LOCAL_PACKAGES}}|"Packages/Core"|' \
+  -e 's/{{PLATFORMS}}/"macOS"/' -e 's/{{IOS_SIMULATOR}}//' "$TEMPLATE" >"$P/scripts/verify.sh"
+chmod +x "$P/scripts/verify.sh"
+set_config "$P" '{"format":"none","lint":"none","verify":{"command":"scripts/verify.sh fast"}}'
+mkdir -p "$P/Packages/Core"
+printf '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(\n  name: "Core",\n  platforms: [.iOS(.v17), .macOS(.v14)],\n  targets: [.target(name: "Core")]\n)\n' >"$P/Packages/Core/Package.swift"
+expect_row "doctor platforms: platforms: in a package's manifest are read" "$(pdoctor "$P")" WARN 'Platforms' 'iOS.*Packages/Core/Package\.swift'
+sed -i '' 's/^PLATFORMS=.*/PLATFORMS=("macOS" "iOS")/' "$P/scripts/verify.sh"
+expect_row "doctor platforms: iOS listed with packages only is partial" "$(pdoctor "$P")" WARN 'Platforms' 'no SCHEME.*iOS'
+
+# verify.sh generated before 1.5.0 has no PLATFORMS line: it builds for macOS.
+P="$(platform_project plat-old '"macOS"' '')"
+sed -i '' -e '/^PLATFORMS=/d' -e '/^IOS_SIMULATOR=/d' "$P/scripts/verify.sh"
+pbx "$P" 'SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";'
+expect_row "doctor platforms: a verify.sh without PLATFORMS is read as macOS" "$(pdoctor "$P")" WARN 'Platforms' 'iOS.*not built or tested'
 
 P="$(new_project doctor-tools)"
 set_config "$P" '{"format":"swift-format","lint":"swiftlint","lintBlocking":true}'
@@ -917,7 +1002,8 @@ printf '#!/bin/bash\nexit "${FAKE_SWIFT_EXIT:-0}"\n' >"$FAKES/swift"
 printf '#!/bin/bash\nexit "${FAKE_SWIFTLINT_EXIT:-0}"\n' >"$FAKES/swiftlint"
 chmod +x "$FAKES/xcodebuild" "$FAKES/swift" "$FAKES/swiftlint"
 
-# $1 name, $2 container flag, $3 scheme, $4 packages (bash array body). Prints the project dir.
+# $1 name, $2 container flag, $3 scheme, $4 packages (bash array body),
+# $5 platforms (bash array body, default "macOS"), $6 iOS simulator. Prints the project dir.
 verify_project() {
   local p="$TMP/verify-$1"
   mkdir -p "$p/scripts"
@@ -925,6 +1011,7 @@ verify_project() {
     cp "$TEMPLATE" "$p/scripts/verify.sh"
   else
     sed -e "s|{{XCODE_CONTAINER_FLAG}}|$2|" -e "s|{{SCHEME}}|$3|" -e "s|{{LOCAL_PACKAGES}}|$4|" \
+      -e "s|{{PLATFORMS}}|${5-\"macOS\"}|" -e "s|{{IOS_SIMULATOR}}|${6:-}|" \
       "$TEMPLATE" >"$p/scripts/verify.sh"
   fi
   chmod +x "$p/scripts/verify.sh"
@@ -989,6 +1076,56 @@ expect_verify "verify.sh full: SwiftLint alone is not a verification" 1 'NOT CON
 V="$(verify_project full-scheme '-project App.xcodeproj' App '')"
 expect_verify "verify.sh full: tests plus lint pass" 0 'verify full: PASS' "$(run_verify "$V" full)"
 expect_verify "verify.sh full: failing lint fails" 1 'verify full: FAIL' "$(FAKE_SWIFTLINT_EXIT=2 run_verify "$V" full)"
+
+# ---------- verify.sh platforms (#40) ----------
+
+dest_args() { # $1 project, $2 mode; prints the -destination values, one per line
+  : >"$TMP/xcodebuild-args"
+  FAKE_XCODEBUILD_ARGS="$TMP/xcodebuild-args" run_verify "$1" "$2" >/dev/null
+  grep -A1 -x -- '-destination' "$TMP/xcodebuild-args" | grep -vx -- '-destination' | grep -vx -- '--'
+}
+
+V="$(verify_project mac-only '-project App.xcodeproj' App '')"
+if [ "$(dest_args "$V" fast)" = 'platform=macOS' ]; then ok "verify.sh platforms: macOS builds with the macOS destination"
+else nok "verify.sh platforms: macOS builds with the macOS destination" "$(cat "$TMP/xcodebuild-args")"; fi
+expect_verify "verify.sh platforms: the result names the platforms checked" 0 'verify fast: PASS \(.*platforms: macOS\)' "$(run_verify "$V")"
+
+V="$(verify_project multi '-project App.xcodeproj' App '' '"macOS" "iOS"' 'iPhone 16')"
+if [ "$(dest_args "$V" fast | paste -sd'|' -)" = 'platform=macOS|generic/platform=iOS Simulator' ]; then
+  ok "verify.sh platforms: fast builds iOS for any simulator, without booting one"
+else nok "verify.sh platforms: fast builds iOS for any simulator, without booting one" "$(cat "$TMP/xcodebuild-args")"; fi
+if [ "$(dest_args "$V" full | paste -sd'|' -)" = 'platform=macOS|platform=iOS Simulator,name=iPhone 16' ]; then
+  ok "verify.sh platforms: full tests iOS on the named simulator"
+else nok "verify.sh platforms: full tests iOS on the named simulator" "$(cat "$TMP/xcodebuild-args")"; fi
+out="$(run_verify "$V")"
+expect_verify "verify.sh platforms: a multiplatform pass names both platforms" 0 'verify fast: PASS \(2 build/test check\(s\); platforms: macOS, iOS\)' "$out"
+expect_verify "verify.sh platforms: each build step names its platform" 0 'xcodebuild build \(App, iOS\)' "$out"
+
+# The fake fails only for iOS destinations.
+printf '#!/bin/bash\ncase "$*" in *iOS*) exit 65 ;; esac\nexit 0\n' >"$TMP/xcodebuild-ios-fails"
+chmod +x "$TMP/xcodebuild-ios-fails"
+mkdir -p "$TMP/fakes-ios-fails"
+cp "$FAKES/swift" "$FAKES/swiftlint" "$TMP/fakes-ios-fails/"
+cp "$TMP/xcodebuild-ios-fails" "$TMP/fakes-ios-fails/xcodebuild"
+out="$(PATH="$TMP/fakes-ios-fails:/usr/bin:/bin" "$V/scripts/verify.sh" fast 2>&1; printf '\nexit=%s' $?)"
+if grep -q 'verify fast: FAIL' <<<"$out" && grep -q 'exit=1' <<<"$out" && grep -q 'failed on: iOS' <<<"$out"; then
+  ok "verify.sh platforms: a build failing only on iOS fails and names iOS"
+else nok "verify.sh platforms: a build failing only on iOS fails and names iOS" "$out"; fi
+
+V="$(verify_project pkg-ios '' '' '"Packages/Core"' '"macOS" "iOS"' 'iPhone 16')"
+mkdir -p "$V/Packages/Core"
+out="$(run_verify "$V")"
+expect_verify "verify.sh platforms: packages only, iOS listed, is PARTIAL and never PASS" 0 'verify fast: PARTIAL \(passed on macOS; not checked on iOS' "$out" 'verify fast: PASS'
+
+V="$(verify_project bad-platform '-project App.xcodeproj' App '' '"macOS" "Android"')"
+expect_verify "verify.sh platforms: an unknown platform is NOT CONFIGURED" 1 'NOT CONFIGURED.*Android' "$(run_verify "$V")"
+
+V="$(verify_project no-platform '-project App.xcodeproj' App '' '')"
+expect_verify "verify.sh platforms: a scheme with no platform is NOT CONFIGURED" 1 'NOT CONFIGURED.*PLATFORMS' "$(run_verify "$V")"
+
+V="$(verify_project ios-no-sim '-project App.xcodeproj' App '' '"iOS"' '')"
+expect_verify "verify.sh platforms: iOS builds in fast mode without a simulator name" 0 'verify fast: PASS' "$(run_verify "$V")"
+expect_verify "verify.sh platforms: iOS tests in full mode need IOS_SIMULATOR" 1 'NOT CONFIGURED.*IOS_SIMULATOR' "$(run_verify "$V" full)"
 
 # ---------- architecture contracts (#13) ----------
 # Real `swift package dump-package` on tests/fixtures/contracts: it reads the manifest
