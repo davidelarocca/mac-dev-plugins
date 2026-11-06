@@ -2161,6 +2161,49 @@ hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
 printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>\n' >"$P/Helper/Helper.entitlements"
 expect_result "security: a new entitlements file is a change too" 2 'Helper/Helper\.entitlements: com\.apple\.security\.cs\.allow-unsigned-executable-memory = true' "$(rstop "$P")"
 
+# ---------- concurrency escape hatches (#37) ----------
+# Real SwiftLint with the setup template: the rules are regexes, so test them as SwiftLint runs them.
+
+if ! command -v swiftlint >/dev/null 2>&1; then
+  printf 'skip  concurrency: swiftlint not installed, the template rules were not run\n'
+else
+  # Not under $TMP: with an `excluded:` list, SwiftLint 0.65 ignores the baseline in folders
+  # reached through /var or /tmp (both links to /private), so test where projects live.
+  L="$HERE/../.build/concurrency-test"
+  rm -rf "$L"
+  mkdir -p "$L/Sources"
+  sed 's/{{DS_EXCLUDED_REGEX}}/DesignSystem/' "$PLUGIN/skills/setup/templates/swiftlint.yml" >"$L/.swiftlint.yml"
+  cat >"$L/Sources/Old.swift" <<'EOF'
+final class OldCache: @unchecked Sendable {}
+EOF
+  (cd "$L" && swiftlint lint --quiet --write-baseline .baseline.json >/dev/null 2>&1)
+  cat >"$L/Sources/New.swift" <<'EOF'
+import Foundation
+@preconcurrency import Dispatch
+
+final class Cache: @unchecked Sendable {}
+final class Guarded: @unchecked Sendable {} // concurrency: every access holds lock
+nonisolated(unsafe) var counter = 0
+@MainActor func update() {}
+func callback() { MainActor.assumeIsolated { update() } }
+// A comment about @unchecked Sendable and nonisolated(unsafe) is not code.
+let text = "@preconcurrency in a string is not code"
+EOF
+  lint="$(cd "$L" && swiftlint lint --quiet --baseline .baseline.json 2>&1)"
+  for case_ in 'New.swift:2:.*concurrency_preconcurrency' 'New.swift:4:.*concurrency_unchecked_sendable' 'New.swift:6:.*concurrency_nonisolated_unsafe' 'New.swift:8:.*concurrency_assume_isolated'; do
+    if grep -qE "$case_" <<<"$lint"; then ok "concurrency: reported: ${case_%%.\**}"; else nok "concurrency: reported: $case_" "$lint"; fi
+  done
+  if grep -qE 'New\.swift:(5|9|10):' <<<"$lint"; then nok "concurrency: a justified use, a comment and a string are not reported" "$lint"
+  else ok "concurrency: a justified use, a comment and a string are not reported"; fi
+  if grep -q 'Old\.swift' <<<"$lint"; then nok "concurrency: the baseline keeps existing uses" "$lint"
+  else ok "concurrency: the baseline keeps existing uses"; fi
+  if grep -qF '// concurrency: <why it is safe>' <<<"$lint"; then ok "concurrency: the message says how to justify a needed one"
+  else nok "concurrency: the message says how to justify a needed one" "$lint"; fi
+  rm -rf "$L"
+fi
+if grep -qF '// concurrency: <why it is safe>' "$PLUGIN/skills/setup/templates/rules/architecture.md"; then ok "concurrency: the architecture rule says what to try first and how to justify"
+else nok "concurrency: the architecture rule says what to try first and how to justify"; fi
+
 # ---------- summary ----------
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
