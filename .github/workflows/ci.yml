@@ -138,7 +138,25 @@ jobs:
       - name: tests/ios-fixture.sh --full
         run: /bin/bash tests/ios-fixture.sh --full
 
-  plugin-validate:
+  accessibility-fixture:
+    name: Accessibility audit fixture (UI tests)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Toolchain
+        run: xcodebuild -version
+
+      # The AccessibilityAudit template helper (linked into the fixture) in a real UI test:
+      # the audit finds a button without a description, the fixed screen passes the full
+      # audit, and an exception silences only its own issue.
+      - name: UI tests of tests/fixtures/accessibility
+        working-directory: tests/fixtures/accessibility
+        run: |
+          xcodebuild test -project A11yFixture.xcodeproj -scheme A11yFixture -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" 2>&1 | tee "$RUNNER_TEMP/a11y.log" | grep -E 'Test Case|negative control|error:|TEST (SUCCEEDED|FAILED)'
+          grep -q 'TEST SUCCEEDED' "$RUNNER_TEMP/a11y.log"
+
     name: claude plugin validate
     runs-on: ubuntu-latest
     # Uses the latest Claude Code CLI from npm, so validator changes show up here first.

@@ -2292,6 +2292,17 @@ if jq -e '.hooks.SessionStart[0].matcher | split("|") | index("compact")' "$PLUG
   ok "checkpoint: session-start runs after a compaction"
 else nok "checkpoint: session-start runs after a compaction"; fi
 
+# ---------- accessibility audit template (#36) ----------
+A11Y="$HERE/fixtures/accessibility"
+if [ "$(readlink "$A11Y/A11yFixtureUITests/AccessibilityAudit.swift")" = "../../../../plugins/swift-harness/skills/setup/templates/tests/AccessibilityAudit.swift" ] &&
+  cmp -s "$A11Y/A11yFixtureUITests/AccessibilityAudit.swift" "$PLUGIN/skills/setup/templates/tests/AccessibilityAudit.swift"; then
+  ok "accessibility: the CI fixture runs the template helper itself"
+else nok "accessibility: the CI fixture runs the template helper itself"; fi
+if grep -qF 'has no reason' "$PLUGIN/skills/setup/templates/tests/AccessibilityAudit.swift" &&
+  grep -qF '| `tests/AccessibilityAudit.swift` |' "$PLUGIN/skills/setup/SKILL.md"; then
+  ok "accessibility: exceptions need a reason, and setup installs the helper"
+else nok "accessibility: exceptions need a reason, and setup installs the helper"; fi
+
 # ---------- summary ----------
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
