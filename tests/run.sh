@@ -889,6 +889,24 @@ if [ "$(readlink "$HERE/fixtures/layout/Tests/ScreensTests/LayoutContract.swift"
   cmp -s "$HERE/fixtures/layout/Tests/ScreensTests/LayoutContract.swift" "$TEMPLATES/tests/LayoutContract.swift"; then
   ok "layout: the Swift fixture measures with the template helper itself"
 else nok "layout: the Swift fixture measures with the template helper itself"; fi
+if grep -qF '| `tests/Screenshot.swift` |' "$SKILLS/setup/SKILL.md"; then ok "screenshots: setup installs the capture helper"
+else nok "screenshots: setup installs the capture helper"; fi
+bad=""
+for f in LayoutContract.swift Screenshot.swift; do
+  [ "$(readlink "$HERE/fixtures/visual/Tests/ScreensTests/$f")" = "../../../../../plugins/swift-harness/skills/setup/templates/tests/$f" ] || bad="$bad $f"
+done
+if [ -z "$bad" ]; then ok "screenshots: the Swift fixture captures with the template helpers themselves"
+else nok "screenshots: the Swift fixture captures with the template helpers themselves" "$bad"; fi
+# The reviewer looks where the helper writes.
+if grep -qF '.build/swift-harness/screenshots' "$TEMPLATES/tests/Screenshot.swift" &&
+  grep -qF '.build/swift-harness/screenshots' "$PLUGIN/agents/ui-reviewer.md" &&
+  grep -qF 'screenshots.path' "$PLUGIN/agents/ui-reviewer.md"; then
+  ok "screenshots: ui-reviewer reads the folder the helper writes"
+else nok "screenshots: ui-reviewer reads the folder the helper writes"; fi
+# A direct call warns (deprecated since macOS 14) in projects that treat warnings as errors.
+if grep -vE '^ *//' "$TEMPLATES/tests/Screenshot.swift" | grep -qE '(^|[^"])CGWindowListCreateImage\('; then
+  nok "screenshots: the helper does not call the deprecated capture function directly"
+else ok "screenshots: the helper does not call the deprecated capture function directly"; fi
 
 # ---------- verify.sh template ----------
 
@@ -1714,6 +1732,17 @@ set_config "$L" '{"layout":{"enabled":"yes","pth":"x"}}'
 out="$(doctor "$L")"
 expect_row "doctor: a wrong layout value fails the config" "$out" FAIL Config 'layout.enabled must be true or false'
 expect_row "doctor: an unknown layout key warns" "$out" WARN 'Config keys' 'layout.pth'
+
+# ---------- screenshots (#35) ----------
+# The capture itself runs on the Swift fixture tests/fixtures/visual, in CI. Here: the config
+# key the helper reads is known to doctor.
+set_config "$L" '{"screenshots":{"path":"review/shots"}}'
+out="$(doctor "$L")"
+expect_row "doctor: screenshots.path is a known key" "$out" PASS 'Config keys' 'all known'
+set_config "$L" '{"screenshots":{"path":3,"pth":"x"}}'
+out="$(doctor "$L")"
+expect_row "doctor: a wrong screenshots.path fails the config" "$out" FAIL Config 'screenshots.path must be a path'
+expect_row "doctor: an unknown screenshots key warns" "$out" WARN 'Config keys' 'screenshots.pth'
 
 # ---------- summary ----------
 

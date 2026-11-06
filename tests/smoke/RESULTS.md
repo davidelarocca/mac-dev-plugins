@@ -2,6 +2,21 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-06, screenshot review (#35, branch `feat/screenshot-review`)
+
+Claude Code 2.1.319 (default model; `ui-reviewer` runs on Sonnet), Apple Swift 6.4.2, macOS 27.0.1. New `visual` group, **3 runs per arm**, all invariants pass, $1.18 for the 6 sessions ($0.19-0.22 each, no difference in cost between arms). Every defect below was judged by reading the final messages, not by the loose `info` match.
+
+| Defect | With screenshots | Code only |
+|---|---|---|
+| Planted: the two screens style and inset their lists differently | 3/3 | 3/3 |
+| Planted: Artists titles misaligned by icons of different widths | 3/3, with the x positions read from the image (31, 35, 40, 46) | 2/3, inferred ("can be misaligned"); 1 miss (it only noted the symbols were chosen arbitrarily) |
+| Not planted: `alternatesRowBackgrounds` draws an empty striped row under the last album | 3/3 | 0/3 |
+| Wrong claim about the rendering | 0 | 1/3: "the Albums list lines up with its title" (its rows start at x≈26 and the text at 56, the title at 16) |
+
+- The planted defects were too readable from the code: the code-only reviewer found the list difference every time, and the icon widths twice, from what SwiftUI usually does. The "done when" of #35 asked for a defect that only the screenshot review finds. The planted ones do not show it; the empty striped row does, 3 to 0, but it was noticed after the run, not planned.
+- The difference is in certainty, not in count: with images the reviewer states what it saw, with positions; without, it guesses ("probably", "likely"), and once guessed wrong.
+- n=3 on one small fixture. Not a measure of the effect on real apps.
+
 ## 2026-11-06, layout contract (#34, branch `feat/layout-contract`)
 
 Claude Code 2.1.319, SwiftLint 0.65.1, Apple Swift 6.4.2. Default suite, 16 scenarios: **62/62 invariants**, unchanged. New `layout` group, 6 scenarios, **one run each**, all checks pass, $2.04 for the group (suite and group $4.46). Every arm, baselines included, measured after the session with the template helper at the contract's sizes.

@@ -13,6 +13,7 @@
 #        tests/smoke/run.sh reuse              (the UI reuse scenarios and their baselines)
 #        tests/smoke/run.sh product            (the product map scenarios and their baseline)
 #        tests/smoke/run.sh layout             (the layout contract scenarios and their baselines)
+#        tests/smoke/run.sh visual             (ui-reviewer with and without screenshots, 3 runs each)
 #   SMOKE_DIR=<dir>    where repos and transcripts go (default: a new temp dir)
 #   SMOKE_MODEL=<id>   model for the sessions (default: Claude Code's default)
 #   SMOKE_CHECK_ONLY=1 only re-check the transcripts and repos already in SMOKE_DIR
@@ -38,6 +39,10 @@ PRODUCT_SCENARIOS="product-map product-map-empty product-map-bare"
 # Window sizes (#34): a screen changed with its layout contract in view. Not in the default
 # run: about $2 for the group. Run with `run.sh layout`.
 LAYOUT_SCENARIOS="layout-actions layout-actions-bare layout-chips layout-chips-bare layout-explicit layout-explicit-nodocs"
+# Screenshot review (#35): ui-reviewer on two screens whose defects show in the rendered UI,
+# with the images the project's tests saved and without them. Three runs of each arm. Not in
+# the default run: about $2-3 for the group. Run with `run.sh visual`.
+VISUAL_SCENARIOS="visual-shots-1 visual-shots-2 visual-shots-3 visual-code-1 visual-code-2 visual-code-3"
 PLUGIN_DATA="${SMOKE_PLUGIN_DATA:-$HOME/.claude/plugins/data/swift-harness-inline}"
 
 for tool in claude swift swiftlint jq git; do
@@ -972,6 +977,56 @@ added_lines() {
   git -C "$D" add -N -- "$1"
   git -C "$D" diff HEAD -- "$1" | grep '^+' | grep -v '^+++ '
 }
+# Screenshot review (#35). The project is tests/fixtures/visual: Artists and Albums, both drawn
+# only with tokens. In the rendered UI the Artists titles start at different x (SF Symbols of
+# different widths before them), and the Albums rows sit further in than the Artists rows and
+# than their own header (an inset list inside horizontal padding). "shots": the Screenshot
+# tests ran, the images are in .build/swift-harness/screenshots. "code": the same screens, no
+# capture tests, no images. The plugin is on in both arms; only the images differ. Claude's
+# findings are matched loosely and printed: read them before counting a defect as found.
+VISUAL_TASK='Use the ui-reviewer agent to review the two screens in Sources/Screens (ArtistsView.swift and AlbumsView.swift) for visual consistency. Pass it the two files. Report its findings as it gives them. Do not edit any file.'
+visual_fixture() { # $1 shots|code
+  rm -rf Package.swift Sources Tests docs
+  cp -RL "$REPO/tests/fixtures/visual/Package.swift" "$REPO/tests/fixtures/visual/Sources" \
+    "$REPO/tests/fixtures/visual/Tests" "$REPO/tests/fixtures/visual/docs" .
+  if [ "$1" = shots ]; then
+    swift test --filter 'ScreenshotTests/(artists|albums)' >/dev/null 2>&1
+  else
+    rm -f Tests/ScreensTests/Screenshot.swift Tests/ScreensTests/ScreenshotTests.swift
+  fi
+}
+for _n in 1 2 3; do
+  eval "scenario_visual_shots_$_n() { CONFIG=\"{\$BASE_CONFIG,\\\"lintBlocking\\\":false}\"; TASK=\"\$VISUAL_TASK\"; SETUP='visual_fixture shots'; }"
+  eval "scenario_visual_code_$_n() { CONFIG=\"{\$BASE_CONFIG,\\\"lintBlocking\\\":false}\"; TASK=\"\$VISUAL_TASK\"; SETUP='visual_fixture code'; }"
+  eval "check_visual_shots_$_n() { check_visual shots; }"
+  eval "check_visual_code_$_n() { check_visual code; }"
+done
+check_visual() { # $1 shots|code
+  expect "ui-reviewer agent ran" used_agent 'ui-reviewer'
+  if [ "$1" = shots ]; then
+    expect "screenshots were there to look at" test -f "$D/.build/swift-harness/screenshots/ArtistsView-macos-360x420-light.png"
+    expect "a screenshot was opened" read_image
+  fi
+  expect "no file changed" unchanged Sources
+  note "Artists: icons/titles misaligned (loose match, read it)" result_has 'Artists' '(icon|symbol|glyph)' '(align|line up|lines up|stagger|jagged|ragged|uneven|frame\(width)'
+  note "Albums vs Artists: different inset/margin (loose match, read it)" result_has 'Albums' '(inset|margin|indent|padding)' '(Artists|inconsisten|differ|mismatch|further|deeper)'
+}
+used_agent() {
+  jq -se --arg re "$1" '[.[] | select(.type == "assistant") | .message.content[]?
+    | select(.type == "tool_use" and (.name == "Agent" or .name == "Task")) | .input.subagent_type // "" | select(test($re))]
+    | length > 0' "$T" >/dev/null
+}
+read_image() {
+  jq -se '[.[] | select(.type == "assistant") | .message.content[]?
+    | select(.type == "tool_use" and .name == "Read") | .input.file_path // "" | select(test("\\.png$"))]
+    | length > 0' "$T" >/dev/null
+}
+result_has() { # every pattern matches the final message, case-insensitive
+  local text re
+  text="$(jq -r 'select(.type == "result") | .result' "$T")"
+  for re in "$@"; do printf '%s' "$text" | grep -qiE -- "$re" || return 1; done
+}
+
 added_has() { added_lines "${2:-Sources/App}" | grep -qE -- "$1"; }
 not_added() { ! added_has "$@"; }
 ds_change_documented() { # passes in projects without a registry (baselines)
@@ -1063,6 +1118,7 @@ scenarios="${*:-$ALL_SCENARIOS}"
 [ "$scenarios" = reuse ] && scenarios="$REUSE_SCENARIOS"
 [ "$scenarios" = product ] && scenarios="$PRODUCT_SCENARIOS"
 [ "$scenarios" = layout ] && scenarios="$LAYOUT_SCENARIOS"
+[ "$scenarios" = visual ] && scenarios="$VISUAL_SCENARIOS"
 for name in $scenarios; do
   declare -F "scenario_${name//-/_}" >/dev/null || { echo "smoke: unknown scenario $name" >&2; exit 2; }
 done

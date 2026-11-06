@@ -56,6 +56,7 @@ For each template, if the target file does not exist, create it with placeholder
 | `docs/PRODUCT_MAP.md` | `docs/PRODUCT_MAP.md` |
 | `docs/LAYOUT_CONTRACT.md` | `docs/LAYOUT_CONTRACT.md` (see step 7) |
 | `tests/LayoutContract.swift` | a test target that can import SwiftUI and the screens, without a sandboxed host app (see step 7) |
+| `tests/Screenshot.swift` | the same test target as `LayoutContract.swift` (see step 7) |
 | `docs/adr/0000-template.md` | `docs/adr/0000-template.md` |
 | `swiftlint.yml` | `.swiftlint.yml` |
 | `swiftformat` | `.swiftformat` (only if swiftformat was chosen) |
@@ -99,6 +100,7 @@ Offer it when the app has windows the user resizes. Fill `docs/LAYOUT_CONTRACT.m
 3. The test measures the content without the window's frame, because a minimum frame hides overflow. When the window's minimum frame is inside the content view, propose the split: a content type for View, a small window type that adds the frame for Window. Do not refactor without the user's agreement.
 4. Copy `tests/LayoutContract.swift` into a test target that can import the screens and is not hosted by a sandboxed app (a sandboxed host cannot read `docs/`). Add one test per row, `LayoutContract.check("<View>") { <View>(...) }` and one for its Window, with the preview data the views need. Run them and report the result: a failing row is a real finding, not something to fix in the setup.
 5. List popovers, sheets and secondary windows opened from these screens under "Presented UI".
+6. Offer screenshots for review: copy `tests/Screenshot.swift` next to `LayoutContract.swift` and add one test per row, `Screenshot.capture("<View>") { <View>(...) }`. It saves PNG images at Min and Default, light and dark, to `.build/swift-harness/screenshots/` (add `.build/` to `.gitignore` if it is missing, or set `screenshots.path` in `.claude/swift-harness.json` to an ignored folder). The `ui-reviewer` agent looks at them; they are not compared with a baseline. Each image takes about a third of a second, and the verify command runs these tests at the end of every turn, so the images stay current: with many screens, capture the main ones.
 
 Skip it for apps without resizable windows. It can be done later by asking for a layout contract.
 
