@@ -64,11 +64,12 @@ if ! jq -e 'type == "object"' "$SH_CONFIG" >/dev/null 2>&1; then
 fi
 
 unknown="$(jq -r '
-  (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify", "registry", "layout", "screenshots"])[],
+  (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify", "registry", "layout", "screenshots", "snapshots"])[],
   (if (.verify | type) == "object" then (.verify | keys - ["enabled", "command", "maxAttempts", "inputs"])[] | "verify." + . else empty end),
   (if (.registry | type) == "object" then (.registry | keys - ["enabled", "path", "sources"])[] | "registry." + . else empty end),
   (if (.layout | type) == "object" then (.layout | keys - ["enabled", "path"])[] | "layout." + . else empty end),
-  (if (.screenshots | type) == "object" then (.screenshots | keys - ["path"])[] | "screenshots." + . else empty end)
+  (if (.screenshots | type) == "object" then (.screenshots | keys - ["path"])[] | "screenshots." + . else empty end),
+  (if (.snapshots | type) == "object" then (.snapshots | keys - ["path"])[] | "snapshots." + . else empty end)
 ' "$SH_CONFIG" | paste -sd, - | sed 's/,/, /g')"
 if [ -n "$unknown" ]; then
   row WARN "Config keys" "unknown, ignored by the hooks (typo?): $unknown"
@@ -104,6 +105,11 @@ problems="$(jq -r '
   check(["screenshots"]; type == "object"; "screenshots must be an object"),
   (if (.screenshots | type) == "object" then
     check(["screenshots", "path"]; type == "string" and length > 0; "screenshots.path must be a path")
+  else empty end),
+  check(["snapshots"]; type == "object"; "snapshots must be an object"),
+  (if (.snapshots | type) == "object" then
+    check(["snapshots", "path"]; type == "string" and length > 0 and (startswith("/") | not) and (("/" + . + "/") | contains("/../") | not);
+      "snapshots.path must be a folder inside the project")
   else empty end)
 ' "$SH_CONFIG" | paste -sd ';' - | sed 's/;/; /g')"
 if [ -n "$problems" ]; then
@@ -299,6 +305,32 @@ else
     3) row WARN "Layout contract" "${layout_out#Layout contract ($layout): }" ;;
     *) row FAIL "Layout contract" "$(printf '%s\n' "$layout_out" | grep '^- ' | head -3 | sed 's/^- //' | paste -sd ';' - | sed 's/;/; /g'). Fix: update $layout" ;;
   esac
+fi
+
+# Snapshot baselines (#9): approved images the project's snapshot tests compare with.
+snapshots="$(sh_snapshots)"
+if [ ! -d "$SH_ROOT/$snapshots" ]; then
+  row INFO "Snapshot baselines" "none: $snapshots/ holds the images the visual regression tests compare with (tests/Snapshot.swift from the setup templates), approved with /swift-harness:approve-snapshots"
+else
+  count="$(find "$SH_ROOT/$snapshots" -type f -name '*.png' | wc -l | tr -d ' ')"
+  made="$(find "$SH_ROOT/$snapshots" -type f -name '*.json' -exec jq -r '.os // empty' {} + 2>/dev/null | sort -u | paste -sd, - | sed 's/,/, /g')"
+  this="$(sw_vers -productVersion 2>/dev/null | cut -d. -f1-2)"
+  case "$this" in *.*) ;; ?*) this="$this.0" ;; esac
+  waiting=0
+  for result in "$SH_ROOT/$SH_SNAPSHOT_CANDIDATES"/*.result.json; do
+    [ -f "$result" ] && [ -f "${result%.result.json}.png" ] && [ "$(jq -r .status "$result" 2>/dev/null)" != passed ] && waiting=$((waiting + 1))
+  done
+  waits=""
+  [ "$waiting" -gt 0 ] && waits="; $waiting new image(s) from the last test run wait for approval: /swift-harness:approve-snapshots"
+  if [ -z "$made" ]; then
+    row WARN "Snapshot baselines" "$count image(s) in $snapshots/ without metadata: the tests cannot tell which macOS they were made on$waits"
+  elif [ "$made" != "$this" ]; then
+    row WARN "Snapshot baselines" "$count image(s) made on macOS $made; this Mac runs macOS ${this:-?}, so the snapshot tests report them as not compared. Compare on the Mac they were made on, or approve new ones here$waits"
+  elif [ "$waiting" -gt 0 ]; then
+    row WARN "Snapshot baselines" "$count image(s) made on macOS $made$waits"
+  else
+    row PASS "Snapshot baselines" "$count image(s) made on macOS $made, compared on this Mac; only /swift-harness:approve-snapshots replaces them"
+  fi
 fi
 
 # ---------- last verification ----------

@@ -19,11 +19,10 @@ Packages/DesignSystem/
 │   ├── Modifiers/       shared ViewModifiers (hover, card, selection)
 │   ├── Resources/       Colors.xcassets
 │   └── Gallery/         GalleryView listing every component in every state
-└── Tests/DesignSystemTests/
-    └── Snapshots/
+└── Tests/DesignSystemTests/   snapshot gallery (Snapshot.swift from the setup templates)
 ```
 
-`Package.swift`: platforms `.macOS(.v14)` or higher (match the app), resources `.process("Resources")`, test dependency on `swift-snapshot-testing`. Add the package to the app once in Xcode (File > Add Package Dependencies > Add Local). After that, new files inside the package never need project edits.
+`Package.swift`: platforms `.macOS(.v14)` or higher (match the app), resources `.process("Resources")`. Snapshot tests need no package dependency. Add the package to the app once in Xcode (File > Add Package Dependencies > Add Local). After that, new files inside the package never need project edits.
 
 ## Tokens
 
@@ -55,12 +54,12 @@ A `GalleryView` in the package lists every component in every state, in light an
 
 ## Snapshot tests
 
-See `references/SnapshotTest.swift`. Notes for macOS:
+See `references/SnapshotTest.swift`. It uses `Snapshot.verify` from the setup templates (`tests/Snapshot.swift`, with `LayoutContract.swift` and `Screenshot.swift` in the same test target). Notes for macOS:
 
-- Render through `NSHostingView` with a fixed frame and an explicit appearance (`.aqua`, `.darkAqua`).
-- Rendering differs between macOS versions: record snapshots on the same OS the checks run on, and re-record after a major macOS update in a dedicated commit.
+- It renders in a real offscreen window. `NSHostingView` with `cacheDisplay` (what image snapshot libraries use for `NSView`) drops SwiftUI text and draws placeholders for `List`.
+- Baselines are approved images in `snapshots/`, pinned to the macOS version and display scale they were made on. A test never writes one: a missing or different image fails and waits for `/swift-harness:approve-snapshots`. On another macOS version the images are reported as not compared.
+- A gallery covers every state, long text, a long language and a right-to-left one (`locale:`). `dynamicTypeSize` does not change SwiftUI text on macOS.
 - Run tests that need the package's colors with `xcodebuild test -scheme <Package> -destination 'platform=macOS'`. With Xcode 26 (Swift 6.3), `swift test` copies `Colors.xcassets` without compiling it, so `Color.DS.*` resolves to nothing and snapshots render without the real colors. Xcode 27 (Swift 6.4) compiles it.
-- Use a small `perceptualPrecision` tolerance (around 0.98) to avoid font antialiasing noise.
 
 ## Migration from an existing app
 

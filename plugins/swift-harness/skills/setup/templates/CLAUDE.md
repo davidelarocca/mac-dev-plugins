@@ -25,6 +25,7 @@
 - No raw visual values outside the design system: colors, font sizes, spacing, radii and animation durations come from tokens.
 - Views do not own business logic and never talk to {{PROTECTED_AREA_NAME}} directly.
 - {{PROTECTED_PATHS}} are protected. Changes there need an explicit request and a plan first.
+- Snapshot baselines (`snapshots/`) change only when the user approves new images with `/swift-harness:approve-snapshots`. A failing snapshot is either a defect to fix or a change to show the user.
 - Do not edit `project.pbxproj` by hand. Add files through the file system{{PBXPROJ_NOTE}}.
 - One feature per branch. Do not rewrite unrelated code while implementing a feature.
 
