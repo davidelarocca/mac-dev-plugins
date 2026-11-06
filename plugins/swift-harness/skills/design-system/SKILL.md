@@ -22,7 +22,7 @@ Packages/DesignSystem/
 └── Tests/DesignSystemTests/   snapshot gallery (Snapshot.swift from the setup templates)
 ```
 
-`Package.swift`: platforms `.macOS(.v14)` or higher (match the app), resources `.process("Resources")`. Snapshot tests need no package dependency. Add the package to the app once in Xcode (File > Add Package Dependencies > Add Local). After that, new files inside the package never need project edits.
+`Package.swift`: platforms `.macOS(.v14)` or higher, plus `.iOS(.v17)` or higher when the app runs on iOS (match the app's targets), resources `.process("Resources")`. Snapshot tests need no package dependency. Add the package to the app once in Xcode (File > Add Package Dependencies > Add Local). After that, new files inside the package never need project edits.
 
 ## Tokens
 
@@ -48,13 +48,24 @@ The same shape works for any transient UI that appears in several screens.
 
 Hover, pressed, selected and disabled states belong in `ButtonStyle`s and `ViewModifier`s in the design system. Features apply `.buttonStyle(.dsToolbar)` and never re-implement `onHover` logic.
 
+## iOS and multiplatform
+
+One design system serves every platform the app runs on. Differences live inside the components, never in feature code.
+
+- Text uses text styles (`.font(.body)`, or `Font.custom(_:size:relativeTo:)`) so Dynamic Type scales it; spacing that sits next to text follows it with `@ScaledMetric`. Check each component at the largest accessibility size: it reflows, it does not truncate.
+- Tappable components have a hit area of at least 44 pt on iOS, even when they draw smaller (`contentShape` plus a minimum frame from a token).
+- Hover modifiers and pointer styles are macOS details: on iOS the same component shows its pressed and selected states, and no action is reachable only by hover.
+- Components respect the safe area; only backgrounds extend past it (`ignoresSafeArea` on the background, not the content).
+- Layout switches follow size class (`horizontalSizeClass`), not the device: an iPad in Split View or Slide Over is compact width.
+- Branch with `#if os(iOS)` / `#if os(macOS)` inside the component only where behavior differs, and give the gallery a preview per platform.
+
 ## Gallery
 
 A `GalleryView` in the package lists every component in every state, in light and dark. Show it from a debug-only menu item or a dedicated preview. It is the visual inventory for both the user and Claude.
 
 ## Snapshot tests
 
-See `references/SnapshotTest.swift`. It uses `Snapshot.verify` from the setup templates (`tests/Snapshot.swift`, with `LayoutContract.swift` and `Screenshot.swift` in the same test target). Notes for macOS:
+See `references/SnapshotTest.swift`. It uses `Snapshot.verify` from the setup templates (`tests/Snapshot.swift`, with `LayoutContract.swift` and `Screenshot.swift` in the same test target). Snapshot, screenshot and layout tests are macOS only: they draw in an `NSWindow`. A component that also builds for macOS is compared there; one that builds only for iOS has no snapshot yet. Notes for macOS:
 
 - It renders in a real offscreen window. `NSHostingView` with `cacheDisplay` (what image snapshot libraries use for `NSView`) drops SwiftUI text and draws placeholders for `List`.
 - Baselines are approved images in `snapshots/`, pinned to the macOS version and display scale they were made on. A test never writes one: a missing or different image fails and waits for `/swift-harness:approve-snapshots`. On another macOS version the images are reported as not compared.
