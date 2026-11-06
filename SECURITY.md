@@ -38,4 +38,6 @@ What the approval does **not** cover:
 
 **Protected paths are not a sandbox.** `protectedPaths` and the `project.pbxproj` guard ask for approval before the Edit, Write and MultiEdit tools change a file. A shell command run through Bash can still change those files. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`) and, for untrusted code, an isolated environment.
 
-**What the plugin never does:** it sends no data anywhere, installs no tools, and changes no files outside the project, except its own state in the plugin data folder.
+**What the plugin's own scripts never do:** send data anywhere, install tools, or change files outside the project, except their own state in the plugin data folder.
+
+This covers the hook scripts and the formatter and linter they call. It does not cover `verify.command`. Once you approve it, it runs with your user's permissions and can do anything you can, and that includes the generated `scripts/verify.sh`. `swift test` may download package dependencies, and SwiftPM and Xcode write caches outside the project (for example `~/Library/Caches/org.swift.swiftpm` and `~/Library/Developer/Xcode`). Approve only a command you have read, in a project you trust.
