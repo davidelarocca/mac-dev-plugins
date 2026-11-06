@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Smoke suite: a `reuse` group of 6 scenarios for the problem swift-harness exists for, a second copy of an existing UI component ([#19](https://github.com/davidelarocca/swift-harness/issues/19)). The app has a shared pill presenter; Claude is asked for a confirmation on another screen, then for one with an Undo action the pill does not support. Each scenario also runs without the plugin as a baseline. Result: with this model and this small app, Claude reused or extended the pill in every run, with and without swift-harness. The differences were in the registry, previews, tests and cost, recorded in `tests/smoke/RESULTS.md`. Run with `tests/smoke/run.sh reuse`; not part of the default run.
+
 ## swift-harness 1.2.0 (2026-11-06)
 
 Trust and onboarding. **Upgrading:** the end-of-turn check runs nothing from the repository until you type `/swift-harness:approve-verify` once in each project (and each worktree). Claude is told at session start, and `/swift-harness:doctor` shows it.

@@ -111,7 +111,7 @@ Il `.swiftlint.yml` generato aggiunge sei regole che segnalano valori visivi scr
 Uno strumento di qualità va verificato a sua volta. Ogni release passa da:
 
 - **77 controlli automatici** di hook e template (`tests/run.sh`), eseguiti in CI con la `/bin/bash` 3.2 di macOS, più ShellCheck e la compilazione dei file Swift di riferimento.
-- **Uno smoke test in sessioni reali di Claude Code** (`tests/smoke/`): 8 scenari con gli invarianti verificati in automatico. Ultime esecuzioni: 25 invarianti su 25 rispettati ([risultati](tests/smoke/RESULTS.md)).
+- **Uno smoke test in sessioni reali di Claude Code** (`tests/smoke/`): 11 scenari per gli hook e 6 sul riuso dei componenti UI (3 sono baseline senza il plugin), con gli invarianti verificati in automatico. Ultima esecuzione completa degli scenari degli hook: 31 invarianti su 31 rispettati ([risultati](tests/smoke/RESULTS.md)).
 
 Cosa ha fatto Claude in quelle sessioni:
 
@@ -121,6 +121,7 @@ Cosa ha fatto Claude in quelle sessioni:
 | La modifica richiesta rompeva un test, con "modifica solo questo file" | Ha lasciato stare il test, ha spiegato il fallimento e ha chiesto prima di aggiornarlo. |
 | `.swiftlint.yml` con una regola rotta | Non ha toccato la configurazione e ha detto che il problema era lì, non nella sua modifica. |
 | Padding senza un token corrispondente | Ha mantenuto il valore richiesto, ha riportato l'avviso del lint e ha proposto due strade: un token nuovo o uno esistente. |
+| Richiesta di una conferma con Annulla, con un pill condiviso già nell'app ma senza azioni | Ha esteso il pill condiviso nel design system invece di creare un banner, e ha aggiornato registry, preview e test. Una sessione senza swift-harness ha esteso anch'essa il pill, senza test né preview. |
 
 Dettagli e storico: [tests/smoke/RESULTS.md](tests/smoke/RESULTS.md).
 

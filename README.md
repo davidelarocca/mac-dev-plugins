@@ -122,7 +122,7 @@ They start as warnings, which double as the migration to-do list. Switch a rule 
 A quality tool has to be checked itself. Every release goes through:
 
 - **77 automated checks** of the hooks and templates (`tests/run.sh`), run in CI with macOS `/bin/bash` 3.2, plus ShellCheck and a build of the Swift reference files.
-- **A smoke test in real Claude Code sessions** (`tests/smoke/`): 8 scenarios with their invariants checked automatically. Latest runs: 25/25 invariants passed ([results](tests/smoke/RESULTS.md)).
+- **A smoke test in real Claude Code sessions** (`tests/smoke/`): 11 scenarios for the hooks and 6 for reusing UI components (3 of them baselines without the plugin), with their invariants checked automatically. Latest full run of the hook scenarios: 31/31 invariants passed ([results](tests/smoke/RESULTS.md)).
 
 What Claude did in those sessions:
 
@@ -132,6 +132,7 @@ What Claude did in those sessions:
 | The requested change broke a test, with "only change this file" | Left the test alone, explained the failure and asked before updating it. |
 | `.swiftlint.yml` had a broken rule | Did not touch the config. Reported that the problem was in the config, not in its change. |
 | Padding value with no matching token | Kept the requested value, surfaced the lint warning and offered two options: a new token or an existing one. |
+| Asked for a confirmation with Undo, with a shared pill already in the app that had no action | Extended the shared pill in the design system instead of building a banner, and updated the registry, previews and tests. A session without swift-harness also extended the pill, with no tests or previews. |
 
 Details and history: [tests/smoke/RESULTS.md](tests/smoke/RESULTS.md).
 
