@@ -137,7 +137,7 @@ Il `.swiftlint.yml` generato aggiunge sei regole che segnalano valori visivi scr
 
 Uno strumento di qualità va verificato a sua volta. Ogni release passa da:
 
-- **254 controlli automatici** di hook, template e skill (`tests/run.sh`), eseguiti in CI con la `/bin/bash` 3.2 di macOS, più ShellCheck e la compilazione dei file Swift di riferimento.
+- **273 controlli automatici** di hook, template e skill (`tests/run.sh`), eseguiti in CI con la `/bin/bash` 3.2 di macOS, più ShellCheck e la compilazione dei file Swift di riferimento.
 - **Uno smoke test in sessioni reali di Claude Code** (`tests/smoke/`): 16 scenari per gli hook, 6 sul riuso dei componenti UI e 3 sulla coerenza di prodotto (4 sono baseline senza il plugin), con gli invarianti verificati in automatico. Ultima esecuzione completa degli scenari degli hook: 62 invarianti su 62 rispettati ([risultati](tests/smoke/RESULTS.md)).
 
 Cosa ha fatto Claude in quelle sessioni:
