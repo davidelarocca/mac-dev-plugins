@@ -39,14 +39,21 @@ skipped=""
 
 step() { printf '\n== %s ==\n' "$1"; }
 
+# XCODE_CONTAINER is a flag and a path: keep the path as one argument, even with spaces.
+CONTAINER_ARGS=()
+if [ -n "$XCODE_CONTAINER" ]; then
+  CONTAINER_ARGS=("${XCODE_CONTAINER%% *}")
+  [ "${XCODE_CONTAINER#* }" = "$XCODE_CONTAINER" ] || CONTAINER_ARGS+=("${XCODE_CONTAINER#* }")
+fi
+
 run_xcodebuild() {
   local action="$1"
   if command -v xcbeautify >/dev/null 2>&1; then
-    xcodebuild $XCODE_CONTAINER -scheme "$SCHEME" -destination 'platform=macOS' \
+    xcodebuild ${CONTAINER_ARGS[@]+"${CONTAINER_ARGS[@]}"} -scheme "$SCHEME" -destination 'platform=macOS' \
       -derivedDataPath "$DERIVED_DATA" "$action" 2>&1 | xcbeautify --quiet
     return "${PIPESTATUS[0]}"
   fi
-  xcodebuild $XCODE_CONTAINER -scheme "$SCHEME" -destination 'platform=macOS' \
+  xcodebuild ${CONTAINER_ARGS[@]+"${CONTAINER_ARGS[@]}"} -scheme "$SCHEME" -destination 'platform=macOS' \
     -derivedDataPath "$DERIVED_DATA" -quiet "$action" 2>&1 | grep -E 'error:|FAILED|Test Case .* failed|Testing failed|Build failed' | head -80
   return "${PIPESTATUS[0]}"
 }

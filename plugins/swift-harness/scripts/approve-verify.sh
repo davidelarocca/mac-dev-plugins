@@ -46,11 +46,27 @@ state="$(sh_state_dir)" || {
 command_line="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
 
 status() {
-  local kind word sha
+  local line word sha path
   printf 'Project: %s\nCommand: %s\n' "$SH_ROOT" "$command_line"
-  while read -r kind word sha; do
-    [ "$kind" = file ] && printf 'File: %s (sha256 %s)\n' "$word" "$sha"
+  while IFS= read -r line; do
+    case "$line" in
+      file\ *)
+        read -r _ word sha <<<"$line"
+        printf 'File: %s (sha256 %s)\n' "$word" "$sha"
+        ;;
+      input$'\t'*)
+        IFS=$'\t' read -r _ path sha <<<"$line"
+        case "$sha" in
+          missing) printf 'Input: %s (missing: approving again is needed once it exists)\n' "$path" ;;
+          outside) printf 'Input: %s (outside the project: not covered)\n' "$path" ;;
+          *) printf 'Input: %s (sha256 %s)\n' "$path" "$sha" ;;
+        esac
+        ;;
+    esac
   done < <(sh_verify_manifest "$command_line")
+  if sh_verify_unparsed "$command_line"; then
+    echo "Warning: the command uses quotes or shell syntax, which swift-harness does not parse, so the files it runs may be missing from the list above. Add them to verify.inputs in .claude/swift-harness.json to cover them."
+  fi
   [ "$(sh_cfg '.verify.enabled' 'true')" = "true" ] ||
     echo "Note: verify.enabled is false, so the Stop hook does not run this command."
   if sh_verify_approved "$command_line" "$state"; then
