@@ -26,6 +26,9 @@
 - Views do not own business logic and never talk to {{PROTECTED_AREA_NAME}} directly.
 - {{PROTECTED_PATHS}} are protected. Changes there need an explicit request and a plan first.
 - Snapshot baselines (`snapshots/`) change only when the user approves new images with `/swift-harness:approve-snapshots`. A failing snapshot is either a defect to fix or a change to show the user.
+- Security settings (entitlements, App Transport Security, sandbox and hardened runtime build settings) are never relaxed to make something work. A change fails the end-of-turn check until the user approves it with `/swift-harness:approve-security`; propose the narrowest option and ask.
+- Protected paths are changed only through Edit or Write, where the user is asked. Do not change them with shell commands (`sed`, `cp`, `mv`, `rm`); such changes are reported to the user.
+- Concurrency escape hatches (`@unchecked Sendable`, `nonisolated(unsafe)`, `@preconcurrency`, `assumeIsolated`) are not a way to make code compile. When one is needed, give the reason on the same line: `// concurrency: <why it is safe>`.
 - Do not edit `project.pbxproj` by hand. Add files through the file system{{PBXPROJ_NOTE}}.
 - One feature per branch. Do not rewrite unrelated code while implementing a feature.
 
