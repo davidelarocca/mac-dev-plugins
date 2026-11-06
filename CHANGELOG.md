@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- New: architecture contracts for SwiftPM projects ([#13](https://github.com/davidelarocca/swift-harness/issues/13)). `docs/architecture-contracts.json` lists the dependencies each target may have. The end-of-turn check, and the post-edit hook after a `Package.swift` edit, read the real graph with `swift package dump-package` and fail on a dependency the contract does not allow, or a target it does not list, naming the package, target and dependency. They run only while the verify command is approved, since reading a manifest runs it. A contract changed during the session is shown to you at the end of the turn, with the dependencies added and removed. `/swift-harness:doctor` checks the file without running any manifest; `/swift-harness:setup` offers to create it from the current graph.
+
 ## swift-harness 1.2.1 (2026-11-06)
 
 Fixes from an external audit of 1.2.0. No configuration changes needed.

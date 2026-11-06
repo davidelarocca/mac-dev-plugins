@@ -78,8 +78,8 @@ flowchart LR
 | Subagent | `ui-reviewer` | Read-only review of a UI diff against the design system, the registry and the architecture rules. |
 | Hook | SessionStart | Records the starting code state as a baseline (not as verified), warns if the last check failed on the same code, tells Claude when the verify command is not approved, and reports missing tools. |
 | Hook | PreToolUse | Asks for confirmation before Claude edits `project.pbxproj` or a protected path with the Edit or Write tools. Not a sandbox: see [Limitations](#limitations). |
-| Hook | PostToolUse | Formats and lints the Swift file just edited (only files inside the project); lint results, formatter changes and failures, and SwiftLint configuration errors go back to Claude. |
-| Hook | Stop | Runs your fast verification before Claude ends a turn, only when build inputs changed (Swift code, project and build settings, resources), and only once you approved the command. |
+| Hook | PostToolUse | Formats and lints the Swift file just edited (only files inside the project); lint results, formatter changes and failures, and SwiftLint configuration errors go back to Claude. After a `Package.swift` edit, checks the [architecture contract](#how-it-works). |
+| Hook | Stop | Runs your fast verification and the architecture contract check before Claude ends a turn, only when build inputs changed (Swift code, project and build settings, resources), and only once you approved the command. Tells you if the contract changed during the session. |
 
 The always-on context cost is about 770 tokens per session. Skills load their full instructions only when they are used. Every hook does nothing in a project without `.claude/swift-harness.json`, so your other projects are untouched.
 
@@ -96,6 +96,33 @@ The always-on context cost is about 770 tokens per session. Skills load their fu
 - A result belongs to the code and to the plugin version. After a plugin update, a pass or failure recorded by the old version no longer counts. Unchanged code is not re-run on its own: the check runs at the end of the next turn that changes build inputs, and until then `/swift-harness:doctor` shows the code as not verified.
 - A failure survives a new session: on startup or resume, Claude is told if the last check failed on the current code.
 - Works per git worktree, so parallel agents each verify their own checkout.
+
+</details>
+
+<details>
+<summary><b>Architecture contracts (SwiftPM)</b></summary>
+
+In a project split into SwiftPM targets, the compiler enforces the declared dependencies but not the declarations: to make a change compile, an agent can add `"Services"` to the `UI` target in `Package.swift`, and the boundary is gone. `docs/architecture-contracts.json` lists the dependencies each target may have:
+
+```json
+{
+  "version": 1,
+  "packages": {
+    ".": {
+      "App": ["Features", "DesignSystem"],
+      "Features": ["Domain", "DesignSystem"],
+      "Domain": ["swift-collections/Collections"],
+      "DesignSystem": []
+    }
+  }
+}
+```
+
+- Keys are package folders relative to the repository (`"."`, `"Packages/Core"`). Local targets are named as in `Package.swift`, products of other packages as `package/product`. Anything not listed is not allowed, and a target missing from the contract fails too: a new module is a decision. Test targets are checked only when listed.
+- The graph comes from `swift package dump-package`, with no parsing of Swift source. It runs at the end of each turn that changed build inputs and right after Claude edits a `Package.swift`, only once you approved the verify command: reading the manifest runs it, as the build does.
+- A violation blocks the turn with the package, target and dependency named. To allow a new dependency, add it to the contract, ideally with an ADR.
+- If the contract changes during a session, you get the allowed dependencies added and removed at the end of the turn. Claude can still edit it (add it to `protectedPaths` so edits ask first), but not silently.
+- `/swift-harness:doctor` checks the file and its package folders without running any manifest. Projects without SwiftPM packages, or with a single target, have nothing to check.
 
 </details>
 
@@ -121,8 +148,8 @@ They start as warnings, which double as the migration to-do list. Switch a rule 
 
 A quality tool has to be checked itself. Every release goes through:
 
-- **77 automated checks** of the hooks and templates (`tests/run.sh`), run in CI with macOS `/bin/bash` 3.2, plus ShellCheck and a build of the Swift reference files.
-- **A smoke test in real Claude Code sessions** (`tests/smoke/`): 11 scenarios for the hooks and 6 for reusing UI components (3 of them baselines without the plugin), with their invariants checked automatically. Latest full run of the hook scenarios: 31/31 invariants passed ([results](tests/smoke/RESULTS.md)).
+- **187 automated checks** of the hooks and templates (`tests/run.sh`), run in CI with macOS `/bin/bash` 3.2, plus ShellCheck and a build of the Swift reference files.
+- **A smoke test in real Claude Code sessions** (`tests/smoke/`): 13 scenarios for the hooks and 6 for reusing UI components (3 of them baselines without the plugin), with their invariants checked automatically. Latest full run of the hook scenarios: 49/49 invariants passed ([results](tests/smoke/RESULTS.md)).
 
 What Claude did in those sessions:
 
@@ -234,6 +261,7 @@ Next up: **v1.3.0, architecture you can enforce.** Architecture contracts for Sw
 ## Limitations
 
 - **The verify approval covers what the command names, not everything it reads.** The command is split on spaces, not parsed as shell: with quotes or shell syntax, `/swift-harness:approve-verify` warns that the files it runs may not be covered, and `verify.inputs` covers them. A `Makefile` behind `make verify`, or a script that `verify.sh` sources, can change without a new approval. Approving also means trusting the project's build (Xcode Run Script phases, SwiftPM manifests and plugins). See [SECURITY.md](SECURITY.md).
+- **Architecture contracts cover SwiftPM targets only.** Dependencies between Xcode targets, and imports that the build allows through a transitive dependency, are not checked.
 - **The protected-path guard is not a sandbox.** It covers the Edit, Write and MultiEdit tools only; a shell command run through Bash can still change a protected file. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`).
 - The Swift reference files in the `design-system` skill are examples to adapt, not a library.
 - Snapshot tests render differently across macOS versions. Record and run them on the same OS, and re-record after major updates.
