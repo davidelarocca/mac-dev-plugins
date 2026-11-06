@@ -23,7 +23,9 @@ Show the output to the user as it is: project, command, each file and input with
 
 If the user passed `revoke` as the argument (`$ARGUMENTS`), run the same script with `--revoke` instead, show the output, and stop.
 
-If the status is already `approved`, say so and stop.
+If an `Input:` line says it is outside the project, tell the user the approval will be refused until that entry is removed from `verify.inputs`: an approval cannot cover a file the repository does not contain.
+
+If the status is already `approved`, say so and stop. If it is `approved, partial coverage`, say what that means (the scripts the command runs may change without a new approval) and that listing them in `verify.inputs` and approving again makes the coverage complete.
 
 ## 2. Point out what deserves a look
 
