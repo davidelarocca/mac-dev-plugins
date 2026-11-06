@@ -1142,6 +1142,41 @@ V="$(verify_project ios-no-sim '-project App.xcodeproj' App '' '"iOS"' '')"
 expect_verify "verify.sh platforms: iOS builds in fast mode without a simulator name" 0 'verify fast: PASS' "$(run_verify "$V")"
 expect_verify "verify.sh platforms: iOS tests in full mode need IOS_SIMULATOR" 1 'NOT CONFIGURED.*IOS_SIMULATOR' "$(run_verify "$V" full)"
 
+# ---------- porting scan (#47) ----------
+
+PORT="$TMP/porting"
+cp -R "$HERE/fixtures/porting" "$PORT"
+git -C "$PORT" init -q
+pbefore="$(snapshot "$PORT")"
+pscan="$("$SCRIPTS/porting.sh" scan "$PORT" 2>&1)"
+psum="$("$SCRIPTS/porting.sh" summary "$PORT" 2>&1)"
+expect_result "porting: a shared package importing AppKit blocks iOS, with file and line" 0 'blocks	Packages/Shared › Sources/Shared	Packages/Shared/Sources/Shared/Clipboard\.swift:2	import AppKit' "exit=0
+$pscan"
+expect_result "porting: an AppKit type is named with its line" 0 'Clipboard\.swift:6	AppKit NSPasteboard' "exit=0
+$pscan"
+expect_result "porting: the summary says the package does not build for iOS as is" 0 'Packages/Shared › Sources/Shared .*does not build for iOS as is.*Clipboard\.swift:2 import AppKit' "exit=0
+$psum"
+expect_result "porting: AppKit inside #if os(macOS) is guarded, not blocking" 0 'guarded	Packages/Guarded.*PlatformImage\.swift:3	import AppKit' "exit=0
+$pscan" 'blocks	Packages/Guarded'
+expect_result "porting: the UIKit branch of #else is not reported" 0 'PlatformImage' "exit=0
+$pscan" 'PlatformImage\.swift:(6|7)'
+expect_result "porting: hover is a UI adaptation" 0 'adapt	.*PlatformImage\.swift:13	hover' "exit=0
+$pscan"
+expect_result "porting: comments and strings are not code" 0 'Shared' "exit=0
+$pscan" 'Track\.swift'
+expect_result "porting: a pure Swift package has no macOS-only API" 0 'Packages/Domain › Sources/Domain \(1 Swift file\(s\)\): no macOS-only API' "exit=0
+$psum"
+expect_result "porting: macOS-only scenes in the app are found" 0 'DemoApp\.swift:8	Settings scene.*DemoApp\.swift:9	MenuBarExtra' "exit=0
+$(printf '%s' "$pscan" | tr '\n' ' ')"
+expect_result "porting: menu commands are an adaptation" 0 'adapt	App	App/DemoApp\.swift:7	menu bar commands' "exit=0
+$pscan"
+expect_result "porting: the declared platforms are listed" 0 'Platforms declared:.*- macOS \(Packages/' "exit=0
+$(printf '%s' "$psum" | tr '\n' ' ')"
+expect_result "porting: the summary says a static scan is not a build" 0 'Only a build for iOS proves it builds' "exit=0
+$psum"
+if [ "$pbefore" = "$(snapshot "$PORT")" ]; then ok "porting: the scan changes no file"
+else nok "porting: the scan changes no file"; fi
+
 # ---------- architecture contracts (#13) ----------
 # Real `swift package dump-package` on tests/fixtures/contracts: it reads the manifest
 # without building or fetching anything.

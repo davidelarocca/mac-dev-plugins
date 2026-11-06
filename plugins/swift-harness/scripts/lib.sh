@@ -300,6 +300,40 @@ sh_verify_approved() {
   [ -n "$2" ] && [ "$(sh_verify_digest "$1")" = "$(cat "$2/verify-approved" 2>/dev/null)" ]
 }
 
+# Platforms the project declares, read as text, never by running anything (#40): one
+# "<platform>\t<file>" line each, the first file that declares it, in a fixed order.
+# Sources: SUPPORTED_PLATFORMS and SDKROOT in project.pbxproj, platforms: in Package.swift.
+sh_platforms() { # $1 project root
+  local file sdk p found=""
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    for sdk in $(sed -n -e 's/.*SUPPORTED_PLATFORMS = "\{0,1\}\([^";]*\)"\{0,1\};.*/\1/p' -e 's/.*SDKROOT = "\{0,1\}\([a-z]*\)"\{0,1\};.*/\1/p' "$1/$file"); do
+      case "$sdk" in
+        macosx) p=macOS ;;
+        iphoneos | iphonesimulator) p=iOS ;;
+        xros | xrsimulator) p=visionOS ;;
+        appletvos | appletvsimulator) p=tvOS ;;
+        watchos | watchsimulator) p=watchOS ;;
+        *) continue ;;
+      esac
+      found="$found$p	$file
+"
+    done
+  done <<<"$(git -C "$1" ls-files -co --exclude-standard '*.xcodeproj/project.pbxproj' 2>/dev/null)"
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    for p in $(grep -oE '\.(macOS|iOS|tvOS|watchOS|visionOS|macCatalyst)\(' "$1/$file" | tr -d '.('); do
+      [ "$p" = macCatalyst ] && p="Mac Catalyst"
+      found="$found$p	$file
+"
+    done
+  done <<<"$(git -C "$1" ls-files -co --exclude-standard 'Package.swift' '*/Package.swift' 2>/dev/null)"
+  printf '%s' "$found" | awk -F'\t' '
+    BEGIN { n = split("macOS,iOS,Mac Catalyst,visionOS,tvOS,watchOS", order, ",") }
+    NF && !($1 in line) { line[$1] = $0 }
+    END { for (i = 1; i <= n; i++) if (order[i] in line) print line[order[i]] }'
+}
+
 # Initialise SH_ROOT and SH_CONFIG. Returns 1 when the project has not opted in.
 sh_init() {
   sh_has_jq || return 1
