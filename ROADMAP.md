@@ -2,22 +2,11 @@
 
 Where swift-harness is going, and why. Live status is in the [milestones](https://github.com/davidelarocca/swift-harness/milestones) and [issues](https://github.com/davidelarocca/swift-harness/issues). This page is updated with every release.
 
-_Last updated: 6 November 2026, after v1.2.0._
+_Last updated: 6 November 2026, after v1.3.0._
 
 **Guiding principle:** every check the harness claims to run must actually run, and must be backed by a test. New features come after the existing gates are reliable, and claims about impact come with measurements.
 
-## Now: v1.3.0, architecture you can enforce
-
-Turn the architecture and the product written in your docs into checks, and into the context Claude works from.
-
-| | What you get | Issue |
-|---|---|---|
-| 🧱 | **Architecture contracts for SwiftPM projects.** Declare which modules may depend on which; adding an undeclared dependency to `Package.swift` fails verification. It reads the real dependency graph, with no guessing from source text. | [#13](https://github.com/davidelarocca/swift-harness/issues/13) |
-| 🧪 | **Test the problem itself.** A real-session scenario where Claude must reuse an existing toast instead of building a second one. | [#19](https://github.com/davidelarocca/swift-harness/issues/19) |
-| 🧭 | **A product map Claude works from.** `/swift-harness:product-map` maps entities, their pages, where each one appears, relations and actions from the code, and lists the gaps: items you cannot open from where they are shown, related items shown as plain text, lists you cannot rename or reorder. The map then guides every UI change and review. | [#30](https://github.com/davidelarocca/swift-harness/issues/30) |
-| 🗂️ | **A component registry that stays true.** Stale paths, missing entries and removed components are caught automatically. | [#7](https://github.com/davidelarocca/swift-harness/issues/7) |
-
-## Next: v1.4.0, visual coherence
+## Now: v1.4.0, visual coherence
 
 Screens that hold up at every window size, reviewed as they look, not only as they are written.
 
@@ -43,6 +32,8 @@ Screens that hold up at every window size, reviewed as they look, not only as th
 
 | Version | Highlights |
 |---|---|
+| [1.3.0](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.3.0) | Architecture you can enforce: SwiftPM architecture contracts checked from the real dependency graph, a component registry checked against the code, `/swift-harness:product-map` for navigation and lifecycle gaps, security settings proposed as protected paths, and real-session tests for reuse and product coherence. |
+| [1.2.1](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.2.1) | Fixes from an external audit: `verify.inputs` and a warning for verify commands with quotes, Xcode project paths with spaces, docs on re-verification after an update. |
 | [1.2.0](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.2.0) | Trust and onboarding: the repository's verify command runs only after you approve it (`/swift-harness:approve-verify`), `/swift-harness:doctor` diagnoses the setup, and results are tied to the plugin version so an update re-verifies once. |
 | [1.1.3](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.1.3) | Strict lint means strict: with `lintBlocking`, a missing SwiftLint fails the end-of-turn check instead of passing unlinted code. |
 | [1.1.2](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.1.2) | Verification fixes from an external review: lint alone never passes `verify.sh full`, design-system colors checked at runtime, blocking plugin validation. |

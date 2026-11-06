@@ -67,15 +67,16 @@ flowchart LR
 
 | Tipo | Nome | Cosa fa |
 |---|---|---|
-| Skill (la lanci tu) | `/swift-harness:setup` | Prepara un progetto nuovo o esistente: `CLAUDE.md`, `.claude/rules/`, `docs/` (architettura, design system, registro componenti, template ADR), `.swiftlint.yml`, formatter, `scripts/verify.sh`, config degli hook. Non sovrascrive mai file esistenti. |
+| Skill (la lanci tu) | `/swift-harness:setup` | Prepara un progetto nuovo o esistente: `CLAUDE.md`, `.claude/rules/`, `docs/` (architettura, design system, registro componenti, product map, template ADR), `.swiftlint.yml`, formatter, `scripts/verify.sh`, config degli hook. Non sovrascrive mai file esistenti. |
 | Skill (la lanci tu) | `/swift-harness:approve-verify` | Mostra il comando di verifica del progetto e i file che esegue, poi lo approva per il controllo a fine turno. Puoi lanciarla solo tu. `/swift-harness:approve-verify revoke` toglie l'approvazione. |
 | Skill (la lanci tu) | `/swift-harness:doctor` | Controllo in sola lettura della configurazione: strumenti, chiavi e valori della config, segnaposto `{{...}}` rimasti, script di verifica e approvazione, config del formatter, struttura del progetto e ultima verifica. Una riga PASS / WARN / FAIL per controllo, con la correzione. Non modifica file. |
 | Skill (la lanci tu) | `/swift-harness:audit` | Audit in sola lettura di architettura, coerenza della UI e salute del codice, con report e piano di migrazione. |
-| Skill (automatica) | `ui-change` | Procedura "riusa prima di creare" per ogni modifica di interfaccia: cerca nel registro e nel codice, decide se riusare, estendere o creare, implementa con i token, prepara le preview di ogni stato, aggiorna il registro. |
+| Skill (la lanci tu) | `/swift-harness:product-map` | Mappa del prodotto ricavata dal codice, in sola lettura: entità, le loro pagine, ogni punto in cui compaiono, relazioni, raccolte gestite dall'utente e azioni. Elenca i buchi con le prove: elementi che non si aprono da dove sono mostrati, entità collegate mostrate come testo semplice, liste che non si possono rinominare o riordinare, azioni che mancano in alcuni punti. Scrive `docs/PRODUCT_MAP.md` dopo la tua approvazione. |
+| Skill (automatica) | `ui-change` | Procedura "riusa prima di creare" per ogni modifica di interfaccia: cerca nel registro e nel codice, decide se riusare, estendere o creare, implementa con i token, prepara le preview di ogni stato, aggiorna il registro. Un'entità mostrata in un punto nuovo mantiene i collegamenti e le azioni che ha altrove, secondo `docs/PRODUCT_MAP.md`. |
 | Skill (automatica) | `design-system` | Struttura del package, token, presenter condiviso per pillole e toast, stili dei bottoni, gallery, snapshot test, migrazione dai valori hardcoded. Con file Swift di riferimento. |
 | Skill (automatica) | `feature` | Ciclo Discover, Plan, Implement, Verify, Record per ogni feature o step. |
 | Skill (automatica) | `adr` | Registra una decisione architetturale e la indicizza. |
-| Subagent | `ui-reviewer` | Review in sola lettura di un diff contro design system, registro e regole di architettura. |
+| Subagent | `ui-reviewer` | Review in sola lettura di un diff contro design system, registro, product map e regole di architettura. |
 | Hook | SessionStart | Fissa lo stato di partenza del codice come riferimento (non come verificato), avvisa se l'ultima verifica è fallita sullo stesso codice, dice a Claude quando il comando di verifica non è approvato e segnala strumenti mancanti. |
 | Hook | PreToolUse | Chiede conferma prima che Claude modifichi `project.pbxproj` o un percorso protetto con i tool Edit o Write. Non è una sandbox: vedi [Limiti](#limiti). |
 | Hook | PostToolUse | Formatta e controlla il file Swift appena modificato (solo file dentro il progetto); esito del lint, modifiche ed errori del formatter ed errori di configurazione di SwiftLint tornano a Claude. Dopo una modifica a `Package.swift` controlla il contratto di architettura. |
@@ -113,6 +114,19 @@ In un progetto diviso in target SwiftPM il compilatore fa rispettare le dipenden
 </details>
 
 <details>
+<summary><b>Un registro dei componenti che resta vero</b></summary>
+
+Claude legge `docs/COMPONENT_REGISTRY.md` prima di costruire la UI, quindi una voce sbagliata lo manda verso un file spostato o un tipo rinominato. Il registro viene controllato come il codice:
+
+- A fine turno, quando sono cambiati il codice o il registro: ogni File esiste e dichiara il Name (`struct`, `class`, `func`, ...), ID e nomi sono unici, un ID in Retired non è più elencato. Un problema blocca il turno indicando la riga del registro, come una build fallita. Legge solo Markdown, quindi gira senza l'approvazione del comando di verifica.
+- Dopo che Claude modifica un file in `registry.sources`: una nota indica le view, i modifier e gli stili di quel file che il registro non elenca, e le voci che puntano a quel file, come promemoria per aggiornarle nella stessa modifica. Non blocca.
+- `/swift-harness:doctor` mostra l'esito e ogni componente non elencato.
+
+Le colonne si trovano dall'intestazione: la tabella Components deve avere Name e File. Un registro in un altro formato viene segnalato da doctor e non blocca mai. "Componente" vuol dire un tipo di primo livello, non privato, conforme a `View`, `ViewModifier`, `Layout`, `Shape`, a un representable AppKit o a un protocollo `*Style`: presenter e altri tipi condivisi vengono controllati se elencati, ma non rilevati se mancano. Le view non pensate per il riuso (gallery, pezzi di un componente) vanno sotto Internal. Quale componente riusare resta una scelta di Claude, guidata dal registro e dalla skill `ui-change`.
+
+</details>
+
+<details>
 <summary><b>Le regole SwiftLint del design system</b></summary>
 
 Il `.swiftlint.yml` generato aggiunge sei regole che segnalano valori visivi scritti a mano fuori dal design system e dai test: colori, dimensioni dei font, padding, spaziature degli stack, raggi degli angoli e durate delle animazioni. Partono come warning, che fanno anche da lista della migrazione; quando il conteggio di una regola arriva a zero, portala a `error`. L'elenco completo con esempi è nel [README in inglese](README.md#how-it-works).
@@ -123,8 +137,8 @@ Il `.swiftlint.yml` generato aggiunge sei regole che segnalano valori visivi scr
 
 Uno strumento di qualità va verificato a sua volta. Ogni release passa da:
 
-- **199 controlli automatici** di hook e template (`tests/run.sh`), eseguiti in CI con la `/bin/bash` 3.2 di macOS, più ShellCheck e la compilazione dei file Swift di riferimento.
-- **Uno smoke test in sessioni reali di Claude Code** (`tests/smoke/`): 13 scenari per gli hook e 6 sul riuso dei componenti UI (3 sono baseline senza il plugin), con gli invarianti verificati in automatico. Ultima esecuzione completa degli scenari degli hook: 49 invarianti su 49 rispettati ([risultati](tests/smoke/RESULTS.md)).
+- **254 controlli automatici** di hook, template e skill (`tests/run.sh`), eseguiti in CI con la `/bin/bash` 3.2 di macOS, più ShellCheck e la compilazione dei file Swift di riferimento.
+- **Uno smoke test in sessioni reali di Claude Code** (`tests/smoke/`): 16 scenari per gli hook, 6 sul riuso dei componenti UI e 3 sulla coerenza di prodotto (4 sono baseline senza il plugin), con gli invarianti verificati in automatico. Ultima esecuzione completa degli scenari degli hook: 62 invarianti su 62 rispettati ([risultati](tests/smoke/RESULTS.md)).
 
 Cosa ha fatto Claude in quelle sessioni:
 
@@ -178,7 +192,8 @@ Da Claude Code 2.1.275 le prime due righe diventano una: `/plugin install swift-
   "lintBlocking": false,
   "verify": { "enabled": true, "command": "scripts/verify.sh fast", "maxAttempts": 3 },
   "protectedPaths": ["Sources/Audio/"],
-  "guardPbxproj": true
+  "guardPbxproj": true,
+  "registry": { "sources": ["Packages/DesignSystem/Sources"] }
 }
 ```
 
@@ -189,17 +204,19 @@ Da Claude Code 2.1.275 le prime due righe diventano una: `/plugin install swift-
 - `verify.command`: qualsiasi comando; codice di uscita 0 significa verifica superata.
 - `verify.inputs`: file o cartelle coperti dall'approvazione oltre ai file che il comando nomina, per esempio uno script chiamato tra virgolette o tramite `make`.
 - `protectedPaths`: prefissi relativi alla radice del repository che richiedono conferma prima di un Edit o Write (`../` e symlink vengono risolti, anche quando la voce stessa è un symlink).
+- `registry.sources`: le cartelle del design system in cui cercare view, modifier e stili che mancano dal registro. `registry.path` cambia il file del registro (default `docs/COMPONENT_REGISTRY.md`), `registry.enabled: false` spegne il controllo.
 - `scripts/verify.sh` non dichiara mai PASS senza aver eseguito almeno un controllo: senza scheme né package fallisce con `NOT CONFIGURED`, e un package elencato ma inesistente è un fallimento.
 
 La tabella completa delle opzioni è nel [README in inglese](README.md#configuration).
 
 ## Roadmap
 
-Prossima tappa: **v1.3.0, un'architettura che si può far rispettare.** Contratti architetturali per i progetti SwiftPM, un registro dei componenti verificato e un test in sessione reale che Claude riusi un componente esistente invece di crearne un secondo. Tutto nella [roadmap](ROADMAP.md).
+Prossima tappa: **v1.4.0, coerenza visiva.** Comportamento della finestra a ogni dimensione, design review sugli screenshot e visual regression dei componenti condivisi. Poi **v1.5.0, iOS e multipiattaforma**. Tutto nella [roadmap](ROADMAP.md).
 
 ## Limiti
 
 - **L'approvazione del comando di verifica copre i file che il comando nomina, non tutto ciò che legge.** Il comando viene diviso sugli spazi, non interpretato come shell: con virgolette o sintassi shell `/swift-harness:approve-verify` avvisa che i file eseguiti potrebbero non essere coperti, e `verify.inputs` li copre. Un `Makefile` dietro `make verify`, o uno script incluso con `source` da `verify.sh`, può cambiare senza una nuova approvazione. Approvare significa anche fidarsi della build del progetto (Run Script di Xcode, manifest e plugin di SwiftPM). Vedi [SECURITY.md](SECURITY.md).
+- **Il controllo del registro riguarda le voci, non il riuso.** Dimostra che ogni voce punta a una dichiarazione reale e trova view, modifier, layout e stili non elencati in `registry.sources`. Non decide se una view nuova duplica una esistente. Modificare solo il registro rifà anche la verifica veloce a fine turno, perché il registro fa parte dello stato controllato.
 - **I contratti di architettura coprono solo i target SwiftPM.** Le dipendenze tra target Xcode, e gli import che la build permette tramite una dipendenza transitiva, non sono controllati.
 - **Il guard sui percorsi protetti non è una sandbox.** Copre solo i tool Edit, Write e MultiEdit; un comando shell eseguito via Bash può comunque modificare un file protetto. Per limiti rigidi usa le [regole di permesso](https://code.claude.com/docs/en/permissions) di Claude Code (`deny`).
 - I file Swift di riferimento della skill `design-system` sono esempi da adattare, non una libreria.
