@@ -991,7 +991,8 @@ visual_fixture() { # $1 shots|code
   cp -RL "$REPO/tests/fixtures/visual/Package.swift" "$REPO/tests/fixtures/visual/Sources" \
     "$REPO/tests/fixtures/visual/Tests" "$REPO/tests/fixtures/visual/docs" .
   if [ "$1" = shots ]; then
-    swift test --filter 'ScreenshotTests/(artists|albums)' >/dev/null 2>&1
+    swift test --filter 'ScreenshotTests/(artists|albums)' >"$WORK/visual-capture-$$.log" 2>&1 ||
+      echo "smoke: capture tests failed, see $WORK/visual-capture-$$.log" >&2
   else
     rm -f Tests/ScreensTests/Screenshot.swift Tests/ScreensTests/ScreenshotTests.swift
   fi
@@ -1005,7 +1006,7 @@ done
 check_visual() { # $1 shots|code
   expect "ui-reviewer agent ran" used_agent 'ui-reviewer'
   if [ "$1" = shots ]; then
-    expect "screenshots were there to look at" test -f "$D/.build/swift-harness/screenshots/ArtistsView-macos-360x420-light.png"
+    expect "all 8 screenshots were there to look at (2 screens, 2 sizes, 2 appearances)" all_shots
     expect "a screenshot was opened" read_image
   fi
   expect "no file changed" unchanged Sources
@@ -1016,6 +1017,12 @@ used_agent() {
   jq -se --arg re "$1" '[.[] | select(.type == "assistant") | .message.content[]?
     | select(.type == "tool_use" and (.name == "Agent" or .name == "Task")) | .input.subagent_type // "" | select(test($re))]
     | length > 0' "$T" >/dev/null
+}
+all_shots() {
+  local s size a
+  for s in ArtistsView AlbumsView; do for size in 360x420 600x420; do for a in light dark; do
+    [ -s "$D/.build/swift-harness/screenshots/$s-macos-$size-$a.png" ] || return 1
+  done; done; done
 }
 read_image() {
   jq -se '[.[] | select(.type == "assistant") | .message.content[]?
