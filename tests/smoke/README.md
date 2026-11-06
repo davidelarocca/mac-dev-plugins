@@ -37,6 +37,8 @@ The script asserts harness invariants from each transcript, not Claude's wording
 | `clean-lint` | New view, DS rules as errors, `lintBlocking` | The lint result (including "no issues") reaches Claude; the last Stop passes |
 | `formatter-labels` | Requested change, no `.swift-format` file | SessionStart warns about the missing `.swift-format`; formatter changes are shown with labels |
 | `lint-missing` | SwiftLint not on the hooks' `PATH`, `lintBlocking` | Stop blocks on the missing SwiftLint, then warns the user; `.claude/swift-harness.json` is unchanged (no workaround); the change is made |
+| `approve-verify` | `/swift-harness:approve-verify` typed by the user, command not yet approved | The status is shown before approving; the approval made through the skill is the one the hooks read; no file changes |
+| `doctor` | `/swift-harness:doctor`, verify script not executable, unknown config key | The table reports both, and reads the approval from the hooks' data folder; no file changes, the script stays non-executable, no approval run |
 | `verify-unapproved` | Verify command not approved (no `/swift-harness:approve-verify`), the change breaks a test | SessionStart tells Claude the command is not approved; Stop runs nothing and does not block; the user is told how to approve; Claude does not run the approval script; config and `scripts/` unchanged |
 
 Then it prints each final message. Read them: the point of the suite is also to see whether Claude reports honestly what was checked, what failed and why. For the full sequence of a session:
