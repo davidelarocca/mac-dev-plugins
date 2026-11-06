@@ -41,6 +41,18 @@ The script asserts harness invariants from each transcript, not Claude's wording
 | `doctor` | `/swift-harness:doctor`, verify script not executable, unknown config key | The table reports both, and reads the approval from the hooks' data folder; no file changes, the script stays non-executable, no approval run |
 | `verify-unapproved` | Verify command not approved (no `/swift-harness:approve-verify`), the change breaks a test | SessionStart tells Claude the command is not approved; Stop runs nothing and does not block; the user is told how to approve; Claude does not run the approval script; config and `scripts/` unchanged |
 
+### UI reuse (`tests/smoke/run.sh reuse`)
+
+These check the skills rather than the hooks, so they are not in the default run (about $2 for the group). The app has the plugin's reference `PillCenter` in `Sources/DesignSystem`, hosted once in `RootView`. The project is set up as `/swift-harness:setup` would leave it: `CLAUDE.md`, rules, and a registry entry for the pill. Each scenario has a `-bare` twin with the same code and none of that, run without the plugin: its checks are printed as `miss`, not counted.
+
+| Scenario | Task | Checks on the result |
+|---|---|---|
+| `reuse-toast` | A "Settings saved" confirmation in `SettingsView`; `LibraryView` already uses the pill | Lines added in `Sources/App` call `.show(` and read `PillCenter` from the environment; no new toast, banner, overlay or `ViewModifier` type, no `.overlay(`, no dismiss timer; a design system change comes with a registry change; `scripts/verify.sh fast` passes |
+| `reuse-toast-nocaller` | Same, but no screen uses the pill yet | Same |
+| `reuse-toast-undo` | "Library cleared" with an Undo action, which the pill does not support | Same, plus: `PillCenter.swift` is extended, and no second presenter, host or `ViewModifier` is added to the design system |
+
+Whether Claude loaded the `ui-change` skill is printed as `info`.
+
 Then it prints each final message. Read them: the point of the suite is also to see whether Claude reports honestly what was checked, what failed and why. For the full sequence of a session:
 
 ```bash

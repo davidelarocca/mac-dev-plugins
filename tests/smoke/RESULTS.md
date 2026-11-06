@@ -2,6 +2,20 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-06, UI reuse (#19, branch `feat/smoke-reuse-toast`)
+
+Claude Code 2.1.318, Apple Swift 6.4.2. New `reuse` group, 6 scenarios, one run each: **38/38 checks** (the 19 in the baselines are reported, not counted), $2.10.
+
+| Scenario | With swift-harness | Without (baseline) |
+|---|---|---|
+| `reuse-toast`: "Settings saved" confirmation, `LibraryView` already uses the pill | 6/6, $0.23 | 6/6, $0.15 |
+| `reuse-toast-nocaller`: same, the pill is hosted but no screen uses it | 6/6, $0.24 | 6/6, $0.15 |
+| `reuse-toast-undo`: "Library cleared" with Undo, the pill has no action | 7/7, $0.98 | 7/7, $0.35 |
+
+- **The core claim is not shown here.** Without the plugin Claude also found `PillCenter`, read it from the environment and, when it lacked an action, extended it in the design system instead of building a banner. In this small app the shared component is one search away; these scenarios do not reproduce the duplicate. They stay as a regression check for the skills.
+- What differed with the plugin: Claude loaded the `ui-change` skill every time, updated the registry entry ("Used by", new option), and stated the missing test. In `reuse-toast-undo` it also moved the track list into a tested model, added previews for every pill state and tests for the action, ran the reviewer agent, and asked whether the new pattern deserves an ADR. The baseline added none of these and changed `Pill`'s equality to identity without mentioning callers. That run cost 2.8 times as much.
+- Measuring where the plugin prevents duplicates (a larger codebase, two copies already present, several runs per case) is left to the evals (#8).
+
 ## 2026-11-06, verification identity (#18, branch `feat/verification-identity`)
 
 Claude Code 2.1.318, Apple Swift 6.4.2. Re-ran the four scenarios that depend on the Stop check (`stop-fails`, `clean-lint`, `legacy-violation`, `verify-unapproved`): **17/17 invariants**, $0.55. The re-verification after a plugin update is covered by `tests/run.sh` with a copy of the plugin at another version, not in a real session.
