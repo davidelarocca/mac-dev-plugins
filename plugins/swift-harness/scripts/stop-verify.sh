@@ -25,7 +25,11 @@ sh_registry_on && run_registry=true
 # Layout contract (#34): the same, Markdown and Swift files read as text.
 run_layout=false
 sh_layout_on && run_layout=true
-[ "$verify_enabled" = "true" ] || [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ] || [ "$run_registry" = "true" ] || [ "$run_layout" = "true" ] || exit 0
+# Security settings (#32): entitlements, ATS and signing build settings read as text, compared
+# with the state the user approved; recorded at session start, so no approval of code is needed.
+run_security=false
+[ "$(sh_cfg '.security.enabled' 'true')" = "true" ] && [ -f "$state/security-approved" ] && run_security=true
+[ "$verify_enabled" = "true" ] || [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ] || [ "$run_registry" = "true" ] || [ "$run_layout" = "true" ] || [ "$run_security" = "true" ] || exit 0
 
 command_line="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
 max_attempts="$(sh_cfg '.verify.maxAttempts' '3')"
@@ -43,6 +47,7 @@ checks=""
 [ "$run_contracts" = "true" ] && checks="$checks + architecture contracts"
 [ "$run_registry" = "true" ] && checks="${checks:+$checks + }component registry"
 [ "$run_layout" = "true" ] && checks="${checks:+$checks + }layout contract"
+[ "$run_security" = "true" ] && checks="${checks:+$checks + }security settings"
 { [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ]; } && checks="${checks:+$checks + }SwiftLint (lintBlocking)"
 
 fp="$(sh_identity)"
@@ -145,6 +150,13 @@ if [ "$run_layout" = "true" ]; then
   # Exit 3: a contract in another format is reported by doctor, never blocks.
   if [ $? -eq 1 ]; then
     printf '\n== Layout contract ==\n%s\n' "$layout_out" >>"$out"
+    [ "$status" -ne 0 ] || status=1
+  fi
+fi
+
+if [ "$run_security" = "true" ]; then
+  if ! security_out="$("$(dirname "$0")/security.sh" check --project "$SH_ROOT" 2>&1)"; then
+    printf '\n== Security settings ==\n%s\n' "$security_out" >>"$out"
     [ "$status" -ne 0 ] || status=1
   fi
 fi

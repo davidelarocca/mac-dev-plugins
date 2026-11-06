@@ -70,6 +70,7 @@ flowchart LR
 | Skill (you run it) | `/swift-harness:setup` | Bootstraps or retrofits a project: `CLAUDE.md`, `.claude/rules/`, `docs/` (architecture hub, design system, component registry, product map, layout contract, ADR template), `.swiftlint.yml`, formatter config, `scripts/verify.sh`, hook config. Never overwrites existing files. |
 | Skill (you run it) | `/swift-harness:approve-verify` | Shows the project's verify command and the files it runs, then approves it for the end-of-turn check. Only you can run it. `/swift-harness:approve-verify revoke` removes the approval. |
 | Skill (you run it) | `/swift-harness:approve-snapshots` | Shows the new images that failing snapshot tests left (with the changed pixels in red), and copies the ones you approve into the baselines folder. Only you can run it: tests never write a baseline. |
+| Skill (you run it) | `/swift-harness:approve-security` | Shows what changed in the app's security settings since your last approval (entitlements, App Transport Security, sandbox and hardened runtime build settings), says which changes weaken protection, and records them as the new baseline when you agree. Until then, the end-of-turn check fails. |
 | Skill (you run it) | `/swift-harness:doctor` | Read-only check of the setup: tools, config keys and values, leftover `{{...}}` placeholders, verify script and approval, formatter config, project structure and the last verification. One PASS / WARN / FAIL row per check, with the fix. Changes no file. |
 | Skill (you run it) | `/swift-harness:audit` | Read-only audit of architecture, UI consistency and code health. Produces a prioritized report and an incremental migration plan. |
 | Skill (you run it) | `/swift-harness:product-map` | Read-only map of the product from its code: entities, their pages, every place each one appears, relations, user-managed collections and action sets. Lists the gaps with evidence: items you cannot open from where they are shown, related items shown as plain text, lists you cannot rename or reorder, actions missing in some places. Writes `docs/PRODUCT_MAP.md` after you approve. |
@@ -305,6 +306,7 @@ On Claude Code 2.1.275 or later, the first two lines can be one: `/plugin instal
 | `layout.path` | the layout contract, relative to the repo root; `LayoutContract.check` reads it from the same config | `docs/LAYOUT_CONTRACT.md` |
 | `screenshots.path` | where `Screenshot.capture` saves images and `ui-reviewer` looks for them, relative to the repo root | `.build/swift-harness/screenshots` |
 | `snapshots.path` | the approved snapshot baselines `Snapshot.verify` compares with, inside the repo; only `/swift-harness:approve-snapshots` writes there, and the guard asks before an edit | `snapshots` |
+| `security.enabled` | compare the app's security settings with the ones you approved at the end of each turn (`false` turns it off) | `true` |
 
 With `swift-format`, keep a `.swift-format` file in the repository root (setup creates one). Without it, swift-format applies its defaults, including 2-space indentation, to every file Claude edits, and SessionStart warns about it.
 
@@ -368,7 +370,7 @@ Issues, ideas and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.
 .claude-plugin/marketplace.json
 plugins/swift-harness/
   .claude-plugin/plugin.json
-  skills/        setup, approve-verify, approve-snapshots, doctor, audit, product-map, port-to-ios, ui-change, design-system, feature, adr
+  skills/        setup, approve-verify, approve-snapshots, approve-security, doctor, audit, product-map, port-to-ios, ui-change, design-system, feature, adr
   agents/        ui-reviewer
   hooks/         hooks.json
   scripts/       hook scripts (bash + jq)
