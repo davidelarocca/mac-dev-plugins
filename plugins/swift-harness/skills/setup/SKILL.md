@@ -29,6 +29,7 @@ Collect, and show the user a short summary:
 - Existing tooling: `.swiftlint.yml`, `.swiftformat`, `.swift-format`, test targets, snapshot tests.
 - Installed tools: `which swiftlint swiftformat jq`, and `xcrun --find swift-format`.
 - Protected areas candidates: audio engines, persistence/migrations, crypto, anything the docs flag as critical.
+- Security settings: `*.entitlements` files (sandbox, hardened runtime exceptions, capabilities), `Info.plist` files of app targets (usage descriptions, URL schemes, ATS), `PrivacyInfo.xcprivacy`. Find them with `git ls-files '*.entitlements' '*Info.plist' '*.xcprivacy'`, ignoring tests and third-party code.
 
 ## 3. Ask only what you cannot detect
 
@@ -36,7 +37,7 @@ Use one AskUserQuestion call with at most four questions, for example:
 
 - Design system location: a local Swift package `Packages/DesignSystem` (recommended) or a folder inside the app target.
 - Formatter: `swiftformat` (recommended, needs Homebrew) or Apple `swift-format` (ships with Xcode).
-- Protected paths that require explicit approval before Claude edits them.
+- Protected paths that require explicit approval before Claude edits them. Pre-select the security settings files found in step 2 and recommend keeping them: Claude tends to relax an entitlement to make something work. List each file by its path: protected paths are exact files or folder prefixes, not globs.
 - Verify commands: the fast check run before Claude ends a turn, and the full check run before merging.
 
 ## 4. Generate files
@@ -52,6 +53,7 @@ For each template, if the target file does not exist, create it with placeholder
 | `docs/ARCHITECTURE.md` | `docs/ARCHITECTURE.md` |
 | `docs/DESIGN_SYSTEM.md` | `docs/DESIGN_SYSTEM.md` |
 | `docs/COMPONENT_REGISTRY.md` | `docs/COMPONENT_REGISTRY.md` |
+| `docs/PRODUCT_MAP.md` | `docs/PRODUCT_MAP.md` |
 | `docs/adr/0000-template.md` | `docs/adr/0000-template.md` |
 | `swiftlint.yml` | `.swiftlint.yml` |
 | `swiftformat` | `.swiftformat` (only if swiftformat was chosen) |
@@ -67,6 +69,7 @@ Rules for filling templates:
 - Keep CLAUDE.md under 100 lines. Link to docs, do not copy them.
 - If the project has existing hub and spoke docs, make `docs/ARCHITECTURE.md` the hub that links to them. Do not move or rewrite the existing docs in this step; list outdated ones as follow-ups.
 - Populate `COMPONENT_REGISTRY.md` only with components that really exist and are shared. Unknown or duplicated ones go in the "To consolidate" section. Do not invent entries.
+- Leave the `PRODUCT_MAP.md` tables empty: filling them needs `/swift-harness:product-map`, which reads the whole app.
 
 ## 5. Tooling check
 
@@ -96,4 +99,4 @@ Check `/plugin` state and recommend, without installing on your own:
 1. Show the list of created and merged files.
 2. Commit on the setup branch with message `chore: set up swift-harness` only after the user confirms.
 3. Tell the user that the end-of-turn check does not run `verify.command` until they approve it by typing `/swift-harness:approve-verify`, and that it asks again whenever the command or `scripts/verify.sh` changes. Do not run the approval yourself.
-4. Suggest the next step: `/swift-harness:audit` if the project already has code, otherwise start with the design system skill.
+4. Suggest the next step: `/swift-harness:audit` and `/swift-harness:product-map` if the project already has code, otherwise start with the design system skill.

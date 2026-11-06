@@ -67,15 +67,16 @@ flowchart LR
 
 | Type | Name | What it does |
 |---|---|---|
-| Skill (you run it) | `/swift-harness:setup` | Bootstraps or retrofits a project: `CLAUDE.md`, `.claude/rules/`, `docs/` (architecture hub, design system, component registry, ADR template), `.swiftlint.yml`, formatter config, `scripts/verify.sh`, hook config. Never overwrites existing files. |
+| Skill (you run it) | `/swift-harness:setup` | Bootstraps or retrofits a project: `CLAUDE.md`, `.claude/rules/`, `docs/` (architecture hub, design system, component registry, product map, ADR template), `.swiftlint.yml`, formatter config, `scripts/verify.sh`, hook config. Never overwrites existing files. |
 | Skill (you run it) | `/swift-harness:approve-verify` | Shows the project's verify command and the files it runs, then approves it for the end-of-turn check. Only you can run it. `/swift-harness:approve-verify revoke` removes the approval. |
 | Skill (you run it) | `/swift-harness:doctor` | Read-only check of the setup: tools, config keys and values, leftover `{{...}}` placeholders, verify script and approval, formatter config, project structure and the last verification. One PASS / WARN / FAIL row per check, with the fix. Changes no file. |
 | Skill (you run it) | `/swift-harness:audit` | Read-only audit of architecture, UI consistency and code health. Produces a prioritized report and an incremental migration plan. |
-| Skill (automatic) | `ui-change` | Reuse-first procedure for any UI change: search the registry and the code, decide reuse, extend or create, implement with tokens, preview every state, update the registry. |
+| Skill (you run it) | `/swift-harness:product-map` | Read-only map of the product from its code: entities, their pages, every place each one appears, relations, user-managed collections and action sets. Lists the gaps with evidence: items you cannot open from where they are shown, related items shown as plain text, lists you cannot rename or reorder, actions missing in some places. Writes `docs/PRODUCT_MAP.md` after you approve. |
+| Skill (automatic) | `ui-change` | Reuse-first procedure for any UI change: search the registry and the code, decide reuse, extend or create, implement with tokens, preview every state, update the registry. An entity shown in a new place keeps the links and actions it has elsewhere, per `docs/PRODUCT_MAP.md`. |
 | Skill (automatic) | `design-system` | Local package layout, tokens, a shared presenter for pills and toasts, button styles, component gallery, snapshot tests, migration plan from hardcoded values. Includes Swift reference files. |
 | Skill (automatic) | `feature` | Discover, plan, implement, verify, record: the loop for every feature or roadmap step. |
 | Skill (automatic) | `adr` | Records an architecture decision and indexes it. |
-| Subagent | `ui-reviewer` | Read-only review of a UI diff against the design system, the registry and the architecture rules. |
+| Subagent | `ui-reviewer` | Read-only review of a UI diff against the design system, the registry, the product map and the architecture rules. |
 | Hook | SessionStart | Records the starting code state as a baseline (not as verified), warns if the last check failed on the same code, tells Claude when the verify command is not approved, and reports missing tools. |
 | Hook | PreToolUse | Asks for confirmation before Claude edits `project.pbxproj` or a protected path with the Edit or Write tools. Not a sandbox: see [Limitations](#limitations). |
 | Hook | PostToolUse | Formats and lints the Swift file just edited (only files inside the project); lint results, formatter changes and failures, and SwiftLint configuration errors go back to Claude. After a `Package.swift` edit, checks the [architecture contract](#how-it-works). |
@@ -256,7 +257,7 @@ scripts/verify.sh
 
 ## Roadmap
 
-Next up: **v1.3.0, architecture you can enforce.** Architecture contracts for SwiftPM projects, a validated component registry, and a real-session test that Claude reuses an existing component instead of building a second one. See the full [roadmap](ROADMAP.md).
+Next up: **v1.3.0, architecture you can enforce.** Architecture contracts for SwiftPM projects, a product map of entities, navigation and actions, and a validated component registry. Then **v1.4.0, visual coherence**: window behavior at every size and a design review on screenshots. See the full [roadmap](ROADMAP.md).
 
 ## Limitations
 
@@ -280,7 +281,7 @@ Issues, ideas and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.
 .claude-plugin/marketplace.json
 plugins/swift-harness/
   .claude-plugin/plugin.json
-  skills/        setup, approve-verify, doctor, audit, ui-change, design-system, feature, adr
+  skills/        setup, approve-verify, doctor, audit, product-map, ui-change, design-system, feature, adr
   agents/        ui-reviewer
   hooks/         hooks.json
   scripts/       hook scripts (bash + jq)

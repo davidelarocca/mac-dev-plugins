@@ -55,6 +55,17 @@ These check the skills rather than the hooks, so they are not in the default run
 
 Whether Claude loaded the `ui-change` skill is printed as `info`.
 
+### Product coherence (`tests/smoke/run.sh product`)
+
+Also skills rather than hooks, so not in the default run (about $1 for the group). A small task manager, not a music app: projects and tasks, a `Navigator` that opens each one's page, and a shared `TaskActionsMenu`. The project page and the task page already use them. The task asks for a "Due Today" list on Home and says nothing about how rows behave. The rules of `docs/PRODUCT_MAP.md` say what a new appearance of an entity needs: it opens its page, the related entity shown with it opens its own, and it offers the shared actions.
+
+| Scenario | Project | Checks on the result |
+|---|---|---|
+| `product-map` | Set up with swift-harness, with a filled `docs/PRODUCT_MAP.md` | Lines added in `Sources/App` call `open(.task(` and `open(.project(` and use `TaskActionsMenu(`; no second task menu type; the product map is updated; `scripts/verify.sh fast` passes |
+| `product-map-empty` | Same, with the empty map that `/swift-harness:setup` leaves before `/swift-harness:product-map` runs | Same |
+| `product-map-bare` | Same code, no plugin, no docs; a baseline printed as `miss`, not counted | Same, except the map |
+
+
 Then it prints each final message. Read them: the point of the suite is also to see whether Claude reports honestly what was checked, what failed and why. For the full sequence of a session:
 
 ```bash

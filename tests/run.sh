@@ -135,6 +135,19 @@ expect_ask "$P" "$P/Sources/Audio/Engine.swift" "guard: protected entry that is 
 expect_ask "$P" "$P/Audio/Engine.swift" "guard: protected entry that is a symlink protects the link path"
 expect_no_ask "$P" "$P/Sources/App.swift" "guard: protected symlink entry does not protect unrelated files"
 
+# Security settings protected file by file, as /swift-harness:setup proposes: the guard
+# matches exact paths and folder prefixes, no globs.
+P="$(new_project guard-security-files)"
+mkdir -p "$P/App"
+echo '<plist/>' >"$P/App/App.entitlements"
+echo '<plist/>' >"$P/App/PrivacyInfo.xcprivacy"
+printf '%s\n' '{"protectedPaths":["App/App.entitlements","App/PrivacyInfo.xcprivacy","Info.plist"]}' >"$P/.claude/swift-harness.json"
+expect_ask "$P" "$P/App/App.entitlements" "guard: a protected entitlements file asks"
+expect_ask "$P" "$P/App/PrivacyInfo.xcprivacy" "guard: a protected privacy manifest asks"
+expect_ask "$P" "$P/Info.plist" "guard: a protected Info.plist asks"
+expect_no_ask "$P" "$P/App/App.entitlements.bak" "guard: a protected file does not protect names that start like it"
+expect_no_ask "$P" "$P/App/Other.entitlements" "guard: only the listed entitlements file is protected"
+
 mkdir -p "$TMP/elsewhere/Sources/Audio"
 expect_no_ask "$P" "$TMP/elsewhere/Sources/Audio/x.swift" "guard: file outside the repository does not ask"
 expect_no_ask "$P" "$P/../elsewhere/Sources/Audio/x.swift" "guard: ../ out of the repository does not ask"
@@ -811,6 +824,59 @@ set_config "$P" '{"verify":{"command":"scripts/verify.sh fast","inputs":"scripts
 expect_row "doctor: verify.inputs that is not a list fails" "$(doctor "$P")" FAIL 'Config' 'verify\.inputs must be a list'
 set_config "$P" '{"verify":{"command":"scripts/verify.sh fast","inputs":["scripts"]}}'
 expect_row "doctor: verify.inputs is a known key" "$(doctor "$P")" PASS 'Config keys' 'all known'
+
+# ---------- skills and templates ----------
+
+SKILLS="$PLUGIN/skills"
+TEMPLATES="$PLUGIN/skills/setup/templates"
+bad=""
+for f in "$SKILLS"/*/SKILL.md; do
+  dir="$(basename "$(dirname "$f")")"
+  name="$(sed -n '2,/^---$/s/^name: *//p' "$f")"
+  [ "$name" = "$dir" ] || bad="$bad $dir(name: ${name:-none})"
+done
+if [ -z "$bad" ]; then ok "skills: every SKILL.md is named like its folder"
+else nok "skills: every SKILL.md is named like its folder" "$bad"; fi
+
+bad=""
+for f in "$SKILLS"/*/SKILL.md "$PLUGIN"/agents/*.md; do
+  for ref in $(grep -oE '\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9_./-]+' "$f" | sed -e 's|^\${CLAUDE_PLUGIN_ROOT}/||' -e 's|[.]$||'); do
+    [ -e "$PLUGIN/$ref" ] || bad="$bad $(basename "$(dirname "$f")"):$ref"
+  done
+done
+if [ -z "$bad" ]; then ok "skills: every \${CLAUDE_PLUGIN_ROOT} path they cite exists"
+else nok "skills: every \${CLAUDE_PLUGIN_ROOT} path they cite exists" "$bad"; fi
+
+bad=""
+for f in "$TEMPLATES"/docs/*.md "$TEMPLATES"/rules/*.md; do
+  rel="${f#"$TEMPLATES"/}"
+  grep -qF "| \`$rel\` |" "$SKILLS/setup/SKILL.md" || bad="$bad $rel"
+done
+if [ -z "$bad" ]; then ok "setup: every docs and rules template is in the setup table"
+else nok "setup: every docs and rules template is in the setup table" "$bad"; fi
+
+bad=""
+for doc in $(grep -oE 'docs/[A-Z_]+\.md' "$TEMPLATES/CLAUDE.md" "$TEMPLATES/docs/ARCHITECTURE.md" "$TEMPLATES"/rules/*.md | cut -d: -f2 | sort -u); do
+  [ -f "$TEMPLATES/$doc" ] || bad="$bad $doc"
+done
+if [ -z "$bad" ]; then ok "setup: every doc linked from CLAUDE.md, ARCHITECTURE.md and rules has a template"
+else nok "setup: every doc linked from CLAUDE.md, ARCHITECTURE.md and rules has a template" "$bad"; fi
+
+PM="$SKILLS/product-map/SKILL.md"
+if [ -f "$PM" ] && grep -q '^disable-model-invocation: true$' "$PM"; then ok "product-map: user-invoked only, like audit"
+else nok "product-map: user-invoked only, like audit"; fi
+bad=""
+for section in '## Rules' '## Entities' '## Relations' '## Appearances' '## Action sets' '## User-managed collections' '## Exceptions' '## Known gaps'; do
+  grep -qxF "$section" "$TEMPLATES/docs/PRODUCT_MAP.md" 2>/dev/null || bad="$bad [$section]"
+done
+if [ -z "$bad" ]; then ok "product-map: template has every section the skills refer to"
+else nok "product-map: template has every section the skills refer to" "$bad"; fi
+bad=""
+for f in "$TEMPLATES/CLAUDE.md" "$TEMPLATES/rules/ui-features.md" "$SKILLS/feature/SKILL.md" "$SKILLS/ui-change/SKILL.md" "$PLUGIN/agents/ui-reviewer.md"; do
+  grep -qF 'docs/PRODUCT_MAP.md' "$f" || bad="$bad ${f#"$PLUGIN"/}"
+done
+if [ -z "$bad" ]; then ok "product-map: CLAUDE.md, the UI rule, feature, ui-change and ui-reviewer consult the map"
+else nok "product-map: CLAUDE.md, the UI rule, feature, ui-change and ui-reviewer consult the map" "$bad"; fi
 
 # ---------- verify.sh template ----------
 

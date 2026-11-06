@@ -12,6 +12,7 @@ The goal is that every interaction pattern exists once. Visual bugs usually come
 1. Read `docs/COMPONENT_REGISTRY.md` and `docs/DESIGN_SYSTEM.md` if they exist.
 2. Search the code for the same behavior, not only the same name. Examples: for a top notification search `overlay(alignment: .top`, `transition(.move(edge: .top`, `Toast`, `Pill`, `Banner`, `HUD`; for a hover button search `onHover`, `ButtonStyle`.
 3. List every place the new or changed element will appear.
+4. If the change displays an entity (a row, tile, header, menu or inspector showing a domain object), read its rows in `docs/PRODUCT_MAP.md`: its destination and how it is opened, its relations, its action set. Without a map, find them in the code: an existing appearance of the same entity shows the navigation call and the shared menu.
 
 ## 2. Decide
 
@@ -24,6 +25,8 @@ The goal is that every interaction pattern exists once. Visual bugs usually come
 | Two or more existing copies | Stop and propose consolidation first. Do not add a third |
 
 State the decision in one line before implementing.
+
+For an entity shown in a new place, the default is the whole: it opens its destination, related entities shown with it open theirs (no plain text styled as a link), and it offers its action set through the shared menu or command. Leave something out only for a reason, and say which.
 
 ## 3. Implement
 
@@ -42,5 +45,6 @@ State the decision in one line before implementing.
 ## 5. Record
 
 - Update `docs/COMPONENT_REGISTRY.md` in the same change: new entry, new variant, new callers, or a move to "Retired".
+- Update `docs/PRODUCT_MAP.md` if it exists: new appearances, actions or relations, and deliberate omissions under "Exceptions".
 - If you found duplicates you did not fix, add them to "To consolidate".
 - If you introduced a new pattern, ask whether it deserves an ADR.
