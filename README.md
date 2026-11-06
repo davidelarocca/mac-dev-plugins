@@ -92,7 +92,8 @@ The always-on context cost is about 770 tokens per session. Skills load their fu
 - Claude tries to stop again without changing anything: it may stop, and you get a warning.
 - After `maxAttempts` consecutive failures (default 3): Claude stops and you decide.
 - With `lintBlocking: true`, files that failed SwiftLint after an edit are linted again here. A hook cannot undo an edit that already happened, so this is where it is caught: the turn is not recorded as passed until those files are clean.
-- "Changed" means any build input: Swift files, `Package.resolved`, `.pbxproj`, `.xcconfig`, plists, entitlements, asset and string catalogs, `Resources/` folders, snapshot baselines, `scripts/`, lint and harness config. `.build` and DerivedData are ignored.
+- "Changed" means any build input: Swift files (including `Package.swift`), `Package.resolved`, workspaces, `.pbxproj`, `.xcconfig`, plists, entitlements, asset and string catalogs, `Resources/` folders, everything under SwiftPM `Sources/` and `Tests/` folders (resources, fixtures), snapshot baselines, `scripts/`, lint and harness config. `.build`, DerivedData, Xcode per-user state (`xcuserdata`) and `.DS_Store` are ignored.
+- A result belongs to the code and to the plugin version. After a plugin update, a pass or failure recorded by the old version no longer counts, so unchanged code is verified again once.
 - A failure survives a new session: on startup or resume, Claude is told if the last check failed on the current code.
 - Works per git worktree, so parallel agents each verify their own checkout.
 
@@ -235,6 +236,7 @@ Next up: **v1.2.0, trust and onboarding.** Repository commands run only after yo
 - The Swift reference files in the `design-system` skill are examples to adapt, not a library.
 - Snapshot tests render differently across macOS versions. Record and run them on the same OS, and re-record after major updates.
 - With Xcode 26, `swift build` and `swift test` copy a package's asset catalog without compiling it, so design-system colors do not resolve in those test runs. Run color-dependent tests with `xcodebuild test`; Xcode 27 compiles the catalog either way.
+- **"Changed" is a list of file patterns, not the build graph.** In an Xcode project with synchronized folders, a resource of an unlisted type outside `Resources/` (say `App/data.json`) does not count as a change. A new SwiftLint or Xcode version does not invalidate a pass either: only the code and the plugin version do.
 - The Stop check runs on your machine and takes as long as your fast verification. Keep `fast` under about two minutes.
 
 ## Contributing

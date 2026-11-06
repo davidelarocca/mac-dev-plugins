@@ -20,9 +20,8 @@ row() { # $1 status, $2 check, $3 detail
 
 . "$here/lib.sh" </dev/null
 
-version="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$here/../.claude-plugin/plugin.json" 2>/dev/null | head -1)"
 printf '| Status | Check | Detail |\n|---|---|---|\n'
-row PASS swift-harness "plugin ${version:-unknown version}"
+row PASS swift-harness "plugin ${SH_VERSION:-unknown version}"
 
 # ---------- tools ----------
 
@@ -218,7 +217,7 @@ fi
 # ---------- last verification ----------
 
 if [ "$in_git" = true ] && [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then
-  fp="$(sh_fingerprint)"
+  fp="$(sh_identity)"
   if [ "$fp" = "$(cat "$state/passed" 2>/dev/null)" ]; then
     row PASS "Last verification" "passed on the current code"
   elif [ "$fp" = "$(cat "$state/failed" 2>/dev/null)" ]; then
