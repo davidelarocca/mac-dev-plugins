@@ -2,7 +2,7 @@
 
 Where swift-harness is going, and why. Live status is in the [milestones](https://github.com/davidelarocca/swift-harness/milestones) and [issues](https://github.com/davidelarocca/swift-harness/issues). This page is updated with every release.
 
-_Last updated: 6 November 2026, after v1.4.1 (layout contract checked on a real app)._
+_Last updated: 7 November 2026: v1.5.0 in progress (iOS support, porting audit), with the security settings contract, the concurrency ratchet, shell changes to protected paths and the compaction checkpoint done on main or in review._
 
 **Guiding principle:** every check the harness claims to run must actually run, and must be backed by a test. New features come after the existing gates are reliable, and claims about impact come with measurements.
 
@@ -14,6 +14,10 @@ The same harness for iOS, iPadOS and multiplatform Swift apps. Most of swift-har
 |---|---|---|
 | 📱 | **iOS and multiplatform projects.** Setup, doctor and the verify script detect the platforms and pick the right destination (simulator for iOS); UI skills and the reviewer apply each platform's conventions (Dynamic Type, safe areas, touch targets, size classes). Checked on a real iOS app before the README says so. | [#40](https://github.com/davidelarocca/swift-harness/issues/40) |
 | 🔍 | **Porting audit, read only.** `/swift-harness:port-to-ios` assesses a macOS app for iOS: what can be shared, what needs an adapter, what needs a product decision, and which target structure fits, with file evidence. It writes `docs/PORTING_PLAN.md` and nothing else. | [#47](https://github.com/davidelarocca/swift-harness/issues/47) |
+| 🧵 | **Ratchet on concurrency escape hatches.** New `@unchecked Sendable`, `nonisolated(unsafe)` and similar need a reason. | [#37](https://github.com/davidelarocca/swift-harness/issues/37) |
+| 🧭 | **Context recovery after compaction.** A short checkpoint of the current task restored after Claude compacts its context. | [#10](https://github.com/davidelarocca/swift-harness/issues/10) |
+| 🔐 | **Entitlements contract.** Sandbox, hardened runtime and capabilities read from the real entitlements and build settings; any change fails verification until you approve it. | [#32](https://github.com/davidelarocca/swift-harness/issues/32) |
+| 🔎 | **Detect protected-path changes made through Bash**, at the end-of-turn check. | [#11](https://github.com/davidelarocca/swift-harness/issues/11) |
 
 ## Next: v1.6.0, assisted macOS to iOS porting
 
@@ -27,11 +31,7 @@ The same harness for iOS, iPadOS and multiplatform Swift apps. Most of swift-har
 |---|---|---|
 | ⌨️ | **Focus, keyboard and Reduce Motion checks** for shared components: what a test can measure on macOS, the rest as review checks. | [#52](https://github.com/davidelarocca/swift-harness/issues/52) |
 | ♿ | **Accessibility audit in UI tests** with Apple's `performAccessibilityAudit()`: missing labels, contrast, hit areas. | [#36](https://github.com/davidelarocca/swift-harness/issues/36) |
-| 🧵 | **Ratchet on concurrency escape hatches.** New `@unchecked Sendable`, `nonisolated(unsafe)` and similar need a reason. | [#37](https://github.com/davidelarocca/swift-harness/issues/37) |
-| 🧭 | **Context recovery after compaction.** A short checkpoint of the current task restored after Claude compacts its context. | [#10](https://github.com/davidelarocca/swift-harness/issues/10) |
-| 🔐 | **Entitlements contract.** Sandbox, hardened runtime and capabilities read from the real entitlements and build settings; any change fails verification until you approve it. | [#32](https://github.com/davidelarocca/swift-harness/issues/32) |
 | ⏱️ | **Performance budget.** Key operations measured against recorded baselines in the full check; a regression fails with the numbers. Later, a skill that explains slowness with a trace. | [#33](https://github.com/davidelarocca/swift-harness/issues/33) |
-| 🔎 | **Detect protected-path changes made through Bash**, at the end-of-turn check. | [#11](https://github.com/davidelarocca/swift-harness/issues/11) |
 | 📊 | **v2.0.0: a measured harness.** Repeatable evals of Claude with and without swift-harness: reuse, regressions, build passes, cost. Published with method and raw data. | [#8](https://github.com/davidelarocca/swift-harness/issues/8) |
 
 Ideas parked until there is demand: a local, read-only view of the checks with evidence behind every edge and status ([#50](https://github.com/davidelarocca/swift-harness/discussions/50)); persistence migrations, localization, approval across worktrees, docs drift ([#38](https://github.com/davidelarocca/swift-harness/discussions/38)).
