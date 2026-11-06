@@ -105,15 +105,30 @@ sh_state_dir() {
 }
 
 # Files that can change the result of a build or test run. Git pathspecs: "*" also matches "/".
+# Everything under a SwiftPM Sources/ or Tests/ folder counts: a target's resources and test
+# fixtures can live in any subfolder. Xcode per-user state and Finder metadata do not.
 SH_BUILD_INPUTS=(
-  '*.swift' '*Package.resolved'
+  '*.swift' '*Package.resolved' '*.xcworkspacedata'
   '*.pbxproj' '*.xcconfig' '*.xcscheme' '*.xctestplan' '*.plist' '*.entitlements'
   '*.xcassets/*' '*.xcstrings' '*.strings' '*.stringsdict' '*.xib' '*.storyboard'
   '*.xcdatamodeld/*' '*.xcmappingmodel/*' '*.metal' '*.h' '*.m' '*.mm' '*.c'
   '*/Resources/*' '*__Snapshots__/*'
+  'Sources/*' '*/Sources/*' 'Tests/*' '*/Tests/*'
   '.swiftlint.yml' '.swiftformat' '.swift-format' '.claude/swift-harness.json' 'scripts/*'
-  ':!.build/*' ':!*/.build/*' ':!*DerivedData/*'
+  ':!.build/*' ':!*/.build/*' ':!*DerivedData/*' ':!*xcuserdata/*' ':!*.DS_Store'
 )
+
+# Plugin version, from the manifest next to these scripts.
+SH_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)"
+
+# What a verification result is about (#18): the code state and the plugin version. The
+# project's policy (lintBlocking, verify.command, ...) is part of the code state, since
+# .claude/swift-harness.json and scripts/ are build inputs. A plugin update can make the
+# checks stricter or change the defaults, so a result recorded by another version does not
+# count: unchanged code is verified again once.
+sh_identity() {
+  printf '%s\nswift-harness %s\n' "$(sh_fingerprint)" "${SH_VERSION:-unknown}" | shasum | cut -d' ' -f1
+}
 
 # Fingerprint of the code state: HEAD, uncommitted changes to build inputs (including
 # deletions), and the content of untracked build inputs.

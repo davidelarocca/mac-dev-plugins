@@ -2,6 +2,10 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-06, verification identity (#18, branch `feat/verification-identity`)
+
+Claude Code 2.1.318, Apple Swift 6.4.2. Re-ran the four scenarios that depend on the Stop check (`stop-fails`, `clean-lint`, `legacy-violation`, `verify-unapproved`): **17/17 invariants**, $0.55. The re-verification after a plugin update is covered by `tests/run.sh` with a copy of the plugin at another version, not in a real session.
+
 ## 2026-11-06, doctor (#12, branch `feat/doctor`)
 
 Claude Code 2.1.318, Apple Swift 6.4.2. Two new scenarios that run the user-only skills through `claude -p "/swift-harness:<skill>"`: **11/11 invariants**, $0.37.

@@ -174,6 +174,28 @@ echo '# changed' >"$P/README.md"; fp_same "fingerprint: README edit is ignored"
 mkdir -p "$P/.build/DerivedData/Build"
 echo '<plist/>' >"$P/.build/DerivedData/Build/Info.plist"
 echo 'let gen = 1' >"$P/.build/DerivedData/Build/Gen.swift"; fp_same "fingerprint: build output in .build is ignored"
+# Coverage added for #18.
+mkdir -p "$P/App.xcworkspace"
+echo '<Workspace/>' >"$P/App.xcworkspace/contents.xcworkspacedata"; fp_changes "fingerprint: new workspace"
+mkdir -p "$P/App.xcworkspace/xcshareddata/swiftpm"
+echo '{}' >"$P/App.xcworkspace/xcshareddata/swiftpm/Package.resolved"; fp_changes "fingerprint: workspace Package.resolved"
+echo '// swift-tools-version:5.9' >"$P/Package.swift"; fp_changes "fingerprint: root Package.swift"
+mkdir -p "$P/Packages/Core"
+echo '// swift-tools-version:5.9' >"$P/Packages/Core/Package.swift"; fp_changes "fingerprint: nested Package.swift"
+mkdir -p "$P/Sources/App/Media"
+echo 'x' >"$P/Sources/App/Media/sound.caf"; fp_changes "fingerprint: SwiftPM resource outside a Resources folder"
+mkdir -p "$P/Packages/Core/Sources/Core/Data"
+echo '{}' >"$P/Packages/Core/Sources/Core/Data/seed.json"; fp_changes "fingerprint: resource in a nested package's Sources"
+mkdir -p "$P/Tests/AppTests/Fixtures"
+echo '{}' >"$P/Tests/AppTests/Fixtures/sample.json"; fp_changes "fingerprint: test fixture"
+rm "$P/scripts/verify.sh"; fp_changes "fingerprint: deleted verify script"
+echo 'disabled_rules: []' >"$P/.swiftlint.yml"; fp_changes "fingerprint: new .swiftlint.yml"
+mkdir -p "$P/App.xcodeproj/xcuserdata/me.xcuserdatad/xcschemes"
+echo '<plist/>' >"$P/App.xcodeproj/xcuserdata/me.xcuserdatad/xcschemes/xcschememanagement.plist"
+echo 'x' >"$P/App.xcodeproj/xcuserdata/me.xcuserdatad/UserInterfaceState.xcuserstate"; fp_same "fingerprint: Xcode per-user state is ignored"
+echo 'x' >"$P/Sources/.DS_Store"; fp_same "fingerprint: .DS_Store is ignored"
+mkdir -p "$P/docs"
+echo '# notes' >"$P/docs/NOTES.md"; fp_same "fingerprint: docs are ignored"
 
 # ---------- session-start.sh / stop-verify.sh ----------
 
@@ -417,6 +439,44 @@ git -C "$P" commit -qam "lint none"
 hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
 echo 'let app = 7' >"$P/Sources/App.swift"
 expect_result "stop: lint set to none never requires SwiftLint" 0 '^exit=0' "$(nolint_stop "$P")"
+
+# ---------- verification identity: plugin version (#18) ----------
+
+# The same plugin with another version number, as after an update.
+PLUGIN2="$TMP/plugin-next"
+cp -R "$PLUGIN" "$PLUGIN2"
+sed -i '' 's/"version": *"[^"]*"/"version": "99.0.0"/' "$PLUGIN2/.claude-plugin/plugin.json"
+LOG="$TMP/identity.log"
+id_runs() { [ -f "$LOG" ] && wc -l <"$LOG" | tr -d ' ' || echo 0; }
+stop_with() { # $1 scripts dir, $2 project, $3 verify exit code
+  jq -nc --arg cwd "$2" '{cwd: $cwd, session_id: "test"}' |
+    FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT="$3" CLAUDE_PLUGIN_DATA="$TMP/data" CLAUDE_PROJECT_DIR="$2" "$1/stop-verify.sh" >/dev/null 2>&1
+}
+
+P="$(new_project identity)"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let app = 40' >"$P/Sources/App.swift"
+stop_with "$SCRIPTS" "$P" 0
+stop_with "$SCRIPTS" "$P" 0
+if [ "$(id_runs)" = 1 ]; then ok "identity: same plugin version, a pass on unchanged code is kept"
+else nok "identity: same plugin version, a pass on unchanged code is kept" "runs=$(id_runs)"; fi
+stop_with "$PLUGIN2/scripts" "$P" 0
+if [ "$(id_runs)" = 2 ]; then ok "identity: after a plugin update, unchanged code is verified again once"
+else nok "identity: after a plugin update, unchanged code is verified again once" "runs=$(id_runs)"; fi
+stop_with "$PLUGIN2/scripts" "$P" 0
+if [ "$(id_runs)" = 2 ]; then ok "identity: the new version's pass is then kept"
+else nok "identity: the new version's pass is then kept" "runs=$(id_runs)"; fi
+
+P="$(new_project identity-failed)"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let app = 41' >"$P/Sources/App.swift"
+stop_with "$SCRIPTS" "$P" 1
+out="$(jq -nc --arg cwd "$P" '{cwd: $cwd, source: "resume"}' | CLAUDE_PLUGIN_DATA="$TMP/data" CLAUDE_PROJECT_DIR="$P" "$PLUGIN2/scripts/session-start.sh")"
+if ! grep -q 'failed on the current code' <<<"$out"; then ok "identity: a failure recorded by another plugin version is not reported as current"
+else nok "identity: a failure recorded by another plugin version is not reported as current" "$out"; fi
+out="$(CLAUDE_PLUGIN_DATA="$TMP/data" "$PLUGIN2/scripts/doctor.sh" "$P" 2>&1)"
+if grep -qE '^\| INFO \| Last verification' <<<"$out"; then ok "identity: doctor does not report another version's result as current"
+else nok "identity: doctor does not report another version's result as current" "$out"; fi
 
 # ---------- verify command approval (#6) ----------
 
