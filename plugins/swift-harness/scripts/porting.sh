@@ -64,10 +64,17 @@ scan() {
       else if (!active()) return
       printf "%s\t%s\t%s:%d\t%s\n", level, mod, FILENAME, FNR, signal
     }
-    FNR == 1 { depth = 0; incomment = 0; mod = module(FILENAME) }
+    FNR == 1 { depth = 0; incomment = 0; inmls = 0; mod = module(FILENAME) }
     {
       line = $0
       # Block comments, then line comments and string contents, so text never counts as code.
+      # Multiline string literals (""") are text, not code.
+      if (inmls) { if (index(line, "\"\"\"")) { line = substr(line, index(line, "\"\"\"") + 3); inmls = 0 } else next }
+      if (index(line, "\"\"\"")) {
+        q = index(line, "\"\"\""); after = substr(line, q + 3)
+        if (index(after, "\"\"\"")) line = substr(line, 1, q - 1) substr(after, index(after, "\"\"\"") + 3)
+        else { line = substr(line, 1, q - 1); inmls = 1 }
+      }
       if (incomment) { if (index(line, "*/")) { line = substr(line, index(line, "*/") + 2); incomment = 0 } else next }
       while (index(line, "/*")) {
         s = index(line, "/*"); e = index(substr(line, s + 2), "*/")

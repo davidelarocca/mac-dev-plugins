@@ -18,7 +18,7 @@ Run from the project root:
 CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" "${CLAUDE_PLUGIN_ROOT}/scripts/security.sh" --status
 ```
 
-If there is no change, say so and stop.
+If the baseline was recorded automatically and not reviewed, the output lists every setting in it and the ones that weaken protection: explain those as in step 2, since they were accepted without anyone looking. If there is no change and nothing to review, say so and stop.
 
 ## 2. Explain each one
 

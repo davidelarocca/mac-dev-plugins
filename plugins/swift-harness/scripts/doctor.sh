@@ -312,11 +312,16 @@ fi
 
 # ---------- security settings (#32) ----------
 
-if [ "$(sh_cfg '.security.enabled' 'true')" != true ]; then
+if [ ! -f "$state/security-approved" ] && [ "$(sh_cfg '.security.enabled' 'true')" != true ]; then
   row WARN "Security settings" "security.enabled is false: entitlements, ATS and signing settings changed by Claude are not reported"
 elif [ ! -f "$state/security-approved" ]; then
   row INFO "Security settings" "no baseline yet: the next session start records the current entitlements, ATS and signing settings ($("$here/security.sh" state --project "$SH_ROOT" 2>/dev/null | grep -c .) setting(s)) for /swift-harness:approve-security"
-elif security_changes="$("$here/security.sh" check --project "$SH_ROOT" 2>/dev/null)"; then
+elif security_changes="$("$here/security.sh" check --project "$SH_ROOT" 2>/dev/null)" && [ "$(sh_cfg '.security.enabled' 'true')" != true ]; then
+  row WARN "Security settings" "security.enabled is false, and you approved turning it off: entitlements, ATS and signing settings changed by Claude are not reported"
+elif [ -z "$security_changes" ] && [ -f "$state/security-unreviewed" ]; then
+  relaxed="$("$here/security.sh" relaxed --project "$SH_ROOT" 2>/dev/null | head -5 | paste -sd';' - | sed 's/;/; /g')"
+  row WARN "Security settings" "baseline recorded automatically on $(cat "$state/security-unreviewed") and not reviewed by you: changes are compared with it, but what was already there was accepted as is${relaxed:+; already weakening protection: $relaxed}. Fix: type /swift-harness:approve-security to review it"
+elif [ -z "$security_changes" ]; then
   row PASS "Security settings" "$(grep -c . "$state/security-approved") setting(s) unchanged since approval (entitlements, ATS, signing build settings)"
 else
   row FAIL "Security settings" "changed since your approval, so the end-of-turn check fails: $(printf '%s\n' "$security_changes" | grep -E '^[+-] ' | head -5 | paste -sd';' - | sed 's/;/; /g'). Fix: revert what you did not intend, then type /swift-harness:approve-security"

@@ -6,7 +6,9 @@
 #   security.sh check     [--project DIR]            exit 1 with the changes since the approval
 #   security.sh --status  [--project DIR]            the changes and a digest (for the user)
 #   security.sh --approve DIGEST [--project DIR]     record the current state as approved
-#   security.sh --record  [--project DIR]            record it only if nothing is recorded yet
+#   security.sh --record  [--project DIR]            record it only if nothing is recorded yet,
+#                                                    marked as not reviewed until the user approves it
+#   security.sh relaxed   [--project DIR]            the current settings that weaken protection
 #
 # Sources, read without running project code: every *.entitlements plist (plutil), the
 # NSAppTransportSecurity dictionary of *Info.plist files, and code-signing and capability build
@@ -22,7 +24,7 @@ usage() {
 action="${1:-}"
 digest=""
 case "$action" in
-  state | check | --status | --record) shift ;;
+  state | check | --status | --record | relaxed) shift ;;
   --approve)
     digest="${2:-}"
     [ -n "$digest" ] || usage
@@ -45,7 +47,7 @@ sh_init || { echo "swift-harness: no .claude/swift-harness.json in $dir (or jq i
 
 EXCLUDE=(':!.build/*' ':!*/.build/*' ':!*DerivedData/*' ':!Pods/*' ':!Carthage/*' ':!*/checkouts/*')
 files() { git -C "$SH_ROOT" ls-files -co --exclude-standard -- "$@" "${EXCLUDE[@]}" 2>/dev/null; }
-SETTINGS='ENABLE_HARDENED_RUNTIME|ENABLE_APP_SANDBOX|CODE_SIGN_ENTITLEMENTS|CODE_SIGN_INJECT_BASE_ENTITLEMENTS|OTHER_CODE_SIGN_FLAGS|ENABLE_USER_SELECTED_FILES|ENABLE_INCOMING_NETWORK_CONNECTIONS|ENABLE_OUTGOING_NETWORK_CONNECTIONS|ENABLE_FILE_ACCESS_[A-Z_]+|ENABLE_RESOURCE_ACCESS_[A-Z_]+|RUNTIME_EXCEPTION_[A-Z_]+|AUTOMATION_APPLE_EVENTS|ENABLE_LIBRARY_VALIDATION|DISABLE_LIBRARY_VALIDATION'
+SETTINGS='CODE_SIGN_IDENTITY|CODE_SIGNING_ALLOWED|CODE_SIGNING_REQUIRED|ENABLE_HARDENED_RUNTIME|ENABLE_APP_SANDBOX|CODE_SIGN_ENTITLEMENTS|CODE_SIGN_INJECT_BASE_ENTITLEMENTS|OTHER_CODE_SIGN_FLAGS|ENABLE_USER_SELECTED_FILES|ENABLE_INCOMING_NETWORK_CONNECTIONS|ENABLE_OUTGOING_NETWORK_CONNECTIONS|ENABLE_FILE_ACCESS_[A-Z_]+|ENABLE_RESOURCE_ACCESS_[A-Z_]+|RUNTIME_EXCEPTION_[A-Z_]+|AUTOMATION_APPLE_EVENTS|ENABLE_LIBRARY_VALIDATION|DISABLE_LIBRARY_VALIDATION'
 
 # One line per setting: "<file>: <key> = <value>", sorted.
 current_state() {
@@ -73,11 +75,18 @@ current_state() {
         sed -E -e 's/^[[:space:]]+//' -e 's/[[:space:]]*=[[:space:]]*/ = /' -e 's/[[:space:]]+$//' -e 's/"//g' |
         sort | uniq -c | awk -v f="$f" '{ c = $1; $1 = ""; sub(/^ /, ""); printf "%s: %s%s\n", f, $0, (c > 1 ? " (" c " configurations)" : "") }'
     done <<<"$(files '*.pbxproj' '*.xcconfig')"
+    # Turning the check off is a change to approve like any other (#32).
+    printf '.claude/swift-harness.json: security.enabled = %s\n' "$(sh_cfg '.security.enabled' 'true')"
   } | sort
 }
 
 state_dir="$(sh_state_path)"
 approved="$state_dir/security-approved"
+# Present while the baseline is the one recorded automatically at the first session, never
+# reviewed: a new clone, Mac or worktree starts from what is on its branch.
+unreviewed="$state_dir/security-unreviewed"
+# Settings that weaken protection, pointed out wherever they appear.
+RELAXED='cs\.(disable-library-validation|allow-jit|allow-unsigned-executable-memory|allow-dyld-environment-variables|disable-executable-page-protection|debugger) = true|temporary-exception|app-sandbox = false|NSAllowsArbitraryLoads[A-Za-z]* = true|NSExceptionAllowsInsecureHTTPLoads = true|ENABLE_HARDENED_RUNTIME = NO|ENABLE_APP_SANDBOX = NO|CODE_SIGNING_ALLOWED = NO|DISABLE_LIBRARY_VALIDATION = YES|RUNTIME_EXCEPTION_[A-Z_]+ = YES|security\.enabled = false'
 changes() { # "+ line" for added or changed, "- line" for removed
   diff "$approved" <(current_state) | sed -n -e 's/^> /+ /p' -e 's/^< /- /p'
 }
@@ -87,8 +96,16 @@ case "$action" in
   state)
     current_state
     ;;
+  relaxed)
+    current_state | grep -E "$RELAXED"
+    exit 0
+    ;;
   check)
     [ -f "$approved" ] || exit 0 # nothing recorded yet: session start records it
+    # Off, and the user approved it off: nothing to compare.
+    if [ "$(sh_cfg '.security.enabled' 'true')" = "false" ] && grep -qxF '.claude/swift-harness.json: security.enabled = false' "$approved"; then
+      exit 0
+    fi
     out="$(changes)"
     [ -z "$out" ] && exit 0
     printf 'Security settings changed since the user approved them:\n%s\n' "$(printf '%s\n' "$out" | head -30)"
@@ -97,7 +114,7 @@ case "$action" in
     ;;
   --record)
     [ -f "$approved" ] && exit 0
-    mkdir -p "$state_dir" && current_state >"$approved"
+    mkdir -p "$state_dir" && current_state >"$approved" && date -u +%Y-%m-%d >"$unreviewed"
     ;;
   --status | --approve)
     [ -n "${CLAUDE_PLUGIN_DATA:-}" ] || {
@@ -110,6 +127,13 @@ case "$action" in
       out="$(changes)"
     fi
     if [ "$action" = "--status" ]; then
+      if [ -f "$unreviewed" ]; then
+        printf 'The baseline was recorded automatically on %s, at the first session in this folder, and you have not reviewed it. Settings in it:\n%s\n' \
+          "$(cat "$unreviewed")" "$(sed 's/^/  /' "$approved")"
+        relaxed="$(grep -E "$RELAXED" "$approved")"
+        [ -z "$relaxed" ] || printf 'Of these, weakening protection:\n%s\n' "$(printf '%s\n' "$relaxed" | sed 's/^/  /')"
+        printf '\n'
+      fi
       if [ -z "$out" ]; then
         printf 'No change since the last approval (%s setting(s) recorded).\n' "$(grep -c . "$approved" 2>/dev/null || echo 0)"
       else
@@ -122,7 +146,7 @@ case "$action" in
       echo "Nothing approved: the security settings changed since the list was shown. List them again." >&2
       exit 1
     fi
-    mkdir -p "$state_dir" && current_state >"$approved"
+    mkdir -p "$state_dir" && current_state >"$approved" && rm -f "$unreviewed"
     printf 'Approved: %s setting(s) recorded as the security baseline.\n' "$(grep -c . "$approved")"
     ;;
 esac

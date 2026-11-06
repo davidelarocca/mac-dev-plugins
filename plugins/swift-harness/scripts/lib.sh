@@ -153,7 +153,8 @@ sh_protected_list() {
     p="${p#./}"
     p="${p%/}"
     [ -e "$SH_ROOT/$p" ] || continue
-    (cd "$SH_ROOT" && find "$p" -type f ! -name .DS_Store -print0 2>/dev/null | xargs -0 shasum -a 256 2>/dev/null)
+    # -H: a protected path that is itself a symlink is followed, as the guard resolves it.
+    (cd "$SH_ROOT" && find -H "$p" -type f ! -name .DS_Store -print0 2>/dev/null | xargs -0 shasum -a 256 2>/dev/null)
   done | sed 's/  / /' | LC_ALL=C sort -u
 }
 
