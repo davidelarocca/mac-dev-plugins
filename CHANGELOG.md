@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking for existing projects:** the end-of-turn check runs the repository's `verify.command` only after you approve it ([#6](https://github.com/davidelarocca/swift-harness/issues/6)). Type `/swift-harness:approve-verify` once per project (and per worktree) after updating. Until then nothing from the repository runs, Claude is told at session start, and you get one warning per code state. The approval is stored in the plugin data folder, outside the repository, and covers the project path, the command and the content of each file it names: change any of them and the check asks again. `/swift-harness:approve-verify revoke` removes it. `lintBlocking` keeps working without the approval, but a clean lint alone is not recorded as a passed verification.
+- `/swift-harness:setup` ends by asking you to approve the generated verify command.
+- SECURITY.md describes what the approval covers and what it does not: files the command reads without naming them, the build itself (Run Script phases, SwiftPM manifests and plugins), and Claude Code's own project hooks.
+
 ## swift-harness 1.1.3 (2026-11-05)
 
 - `lintBlocking`: strict mode now means strict ([#17](https://github.com/davidelarocca/swift-harness/issues/17)). If SwiftLint is not installed, the end-of-turn check fails after code changes, with a message telling Claude to ask the user to install it or turn `lintBlocking` off. Before, unlinted code could be recorded as passed. SessionStart says so up front. The usual `maxAttempts` limit still applies. No change without `lintBlocking`, or with `lint` set to `none`.

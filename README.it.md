@@ -57,7 +57,9 @@ flowchart LR
     D --> E["Claude chiude<br/>il turno"]
     E --> F{"Input della build<br/>cambiati?"}
     F -- no --> G["Fatto"]
-    F -- sì --> H["scripts/verify.sh fast<br/>build + test"]
+    F -- sì --> J{"Comando di verifica<br/>approvato da te?"}
+    J -- no --> K["Non parte,<br/>vieni avvisato"]
+    J -- sì --> H["scripts/verify.sh fast<br/>build + test"]
     H -- passa --> G
     H -- fallisce --> I["Bloccato, con<br/>l'output dell'errore"]
     I --> A
@@ -66,22 +68,24 @@ flowchart LR
 | Tipo | Nome | Cosa fa |
 |---|---|---|
 | Skill (la lanci tu) | `/swift-harness:setup` | Prepara un progetto nuovo o esistente: `CLAUDE.md`, `.claude/rules/`, `docs/` (architettura, design system, registro componenti, template ADR), `.swiftlint.yml`, formatter, `scripts/verify.sh`, config degli hook. Non sovrascrive mai file esistenti. |
+| Skill (la lanci tu) | `/swift-harness:approve-verify` | Mostra il comando di verifica del progetto e i file che esegue, poi lo approva per il controllo a fine turno. Puoi lanciarla solo tu. `/swift-harness:approve-verify revoke` toglie l'approvazione. |
 | Skill (la lanci tu) | `/swift-harness:audit` | Audit in sola lettura di architettura, coerenza della UI e salute del codice, con report e piano di migrazione. |
 | Skill (automatica) | `ui-change` | Procedura "riusa prima di creare" per ogni modifica di interfaccia: cerca nel registro e nel codice, decide se riusare, estendere o creare, implementa con i token, prepara le preview di ogni stato, aggiorna il registro. |
 | Skill (automatica) | `design-system` | Struttura del package, token, presenter condiviso per pillole e toast, stili dei bottoni, gallery, snapshot test, migrazione dai valori hardcoded. Con file Swift di riferimento. |
 | Skill (automatica) | `feature` | Ciclo Discover, Plan, Implement, Verify, Record per ogni feature o step. |
 | Skill (automatica) | `adr` | Registra una decisione architetturale e la indicizza. |
 | Subagent | `ui-reviewer` | Review in sola lettura di un diff contro design system, registro e regole di architettura. |
-| Hook | SessionStart | Fissa lo stato di partenza del codice come riferimento (non come verificato), avvisa se l'ultima verifica è fallita sullo stesso codice e segnala strumenti mancanti. |
+| Hook | SessionStart | Fissa lo stato di partenza del codice come riferimento (non come verificato), avvisa se l'ultima verifica è fallita sullo stesso codice, dice a Claude quando il comando di verifica non è approvato e segnala strumenti mancanti. |
 | Hook | PreToolUse | Chiede conferma prima che Claude modifichi `project.pbxproj` o un percorso protetto con i tool Edit o Write. Non è una sandbox: vedi [Limiti](#limiti). |
 | Hook | PostToolUse | Formatta e controlla il file Swift appena modificato (solo file dentro il progetto); esito del lint, modifiche ed errori del formatter ed errori di configurazione di SwiftLint tornano a Claude. |
-| Hook | Stop | Esegue la verifica veloce prima che Claude chiuda il turno, solo se sono cambiati input della build (codice Swift, impostazioni di progetto e build, risorse). |
+| Hook | Stop | Esegue la verifica veloce prima che Claude chiuda il turno, solo se sono cambiati input della build (codice Swift, impostazioni di progetto e build, risorse) e solo dopo che hai approvato il comando. |
 
 Il costo fisso di contesto è di circa 770 token per sessione; le skill caricano le istruzioni complete solo quando servono. Gli hook sono **spenti in ogni progetto che non contiene `.claude/swift-harness.json`**: gli altri progetti non vengono toccati.
 
 <details>
 <summary><b>Come si comporta il controllo a fine turno</b></summary>
 
+- Il comando di verifica parte solo dopo che lo approvi con `/swift-harness:approve-verify`. L'approvazione vale per il percorso del progetto, il comando e il contenuto di ogni file che il comando nomina, ed è salvata fuori dalla repo. Finché manca, o dopo che uno di questi cambia, il controllo non lo esegue e ti avvisa una volta per stato del codice; `lintBlocking` resta attivo.
 - Codice invariato dall'inizio della sessione o dall'ultima verifica riuscita: non parte nulla. Lo stato di partenza è un riferimento, non una verifica superata: se era già rotto, la prima modifica della sessione fa partire la verifica e lo mostra.
 - Codice cambiato e verifica fallita: Claude viene bloccato e riceve le ultime 60 righe dell'output.
 - Claude prova a fermarsi di nuovo senza modificare nulla: può fermarsi, e ricevi un avviso.
@@ -137,14 +141,15 @@ brew install jq swiftlint swiftformat
 Da Claude Code 2.1.275 le prime due righe diventano una: `/plugin install swift-harness --marketplace davidelarocca/swift-harness`.
 
 > [!IMPORTANT]
-> Usa swift-harness su progetti di cui ti fidi. Fino alla v1.2.0 ([#6](https://github.com/davidelarocca/swift-harness/issues/6)) il controllo a fine turno esegue il comando di verifica configurato nel progetto senza chiedere prima. Vedi [SECURITY.md](SECURITY.md).
+> Il controllo a fine turno esegue il comando di verifica configurato nel progetto, quindi non esegue nulla finché non approvi quel comando con `/swift-harness:approve-verify`, e chiede di nuovo quando il comando o il suo script cambiano. Approvarlo significa fidarsi della build del progetto. Vedi [SECURITY.md](SECURITY.md).
 
 **Uso:**
 
 1. Apri il progetto in Claude Code e fai commit del lavoro in sospeso.
 2. Lancia `/swift-harness:setup`. Rileva la struttura, fa al massimo quattro domande e genera i file su un branch `chore/swift-harness-setup`.
-3. Per un progetto già avviato, passa in plan mode e lancia `/swift-harness:audit`.
-4. Da lì in poi `ui-change`, `feature`, `design-system` e `adr` si attivano da sole e gli hook lavorano in automatico.
+3. Controlla `scripts/verify.sh` e lancia `/swift-harness:approve-verify`, così il controllo a fine turno può eseguirlo.
+4. Per un progetto già avviato, passa in plan mode e lancia `/swift-harness:audit`.
+5. Da lì in poi `ui-change`, `feature`, `design-system` e `adr` si attivano da sole e gli hook lavorano in automatico.
 
 ## Configurazione
 
@@ -177,7 +182,7 @@ Prossima tappa: **v1.2.0, fiducia e onboarding.** I comandi della repo girano so
 
 ## Limiti
 
-- **I comandi della repo girano senza approvazione** fino alla v1.2.0 ([#6](https://github.com/davidelarocca/swift-harness/issues/6)): qualsiasi repository che contiene `.claude/swift-harness.json` può eseguire il proprio `verify.command` quando Claude chiude un turno. Usa il plugin su progetti di cui ti fidi. Vedi [SECURITY.md](SECURITY.md).
+- **L'approvazione del comando di verifica copre i file che il comando nomina, non tutto ciò che legge.** Un `Makefile` dietro `make verify`, o uno script incluso con `source` da `verify.sh`, può cambiare senza una nuova approvazione. Approvare significa anche fidarsi della build del progetto (Run Script di Xcode, manifest e plugin di SwiftPM). Vedi [SECURITY.md](SECURITY.md).
 - **Il guard sui percorsi protetti non è una sandbox.** Copre solo i tool Edit, Write e MultiEdit; un comando shell eseguito via Bash può comunque modificare un file protetto. Per limiti rigidi usa le [regole di permesso](https://code.claude.com/docs/en/permissions) di Claude Code (`deny`).
 - I file Swift di riferimento della skill `design-system` sono esempi da adattare, non una libreria.
 - Gli snapshot test cambiano tra versioni di macOS: registrali ed eseguili sullo stesso sistema, e rigenerali dopo aggiornamenti importanti.

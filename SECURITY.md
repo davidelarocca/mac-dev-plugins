@@ -18,11 +18,23 @@ swift-harness runs local commands on your machine through Claude Code hooks. Kno
 |---|---|---|
 | `jq`, `git`, `shasum` | Every hook | Your system |
 | `swiftformat` or `swift-format`, `swiftlint` | After Claude edits a Swift file | Your system |
-| `verify.command` (default `scripts/verify.sh fast`) | Before Claude ends a turn, when build inputs changed | **The repository**: `.claude/swift-harness.json` and the script it points to |
+| `verify.command` (default `scripts/verify.sh fast`) | Before Claude ends a turn, when build inputs changed, **and only after you approved it** | **The repository**: `.claude/swift-harness.json` and the script it points to |
 
 The hooks do nothing in a repository that has no `.claude/swift-harness.json`.
 
-**Repository commands.** Until [#6](https://github.com/davidelarocca/swift-harness/issues/6) ships (planned for v1.2.0), `verify.command` runs without asking you first. A repository you clone can therefore run its own commands when Claude ends a turn. Enable the plugin only in projects you trust. Planned fix: the command runs only after you approve it, and the approval is stored outside the repository and tied to the exact command and script.
+**Repository commands need your approval.** `verify.command` comes from the repository, so the Stop hook runs it only after you approve it by typing `/swift-harness:approve-verify` ([#6](https://github.com/davidelarocca/swift-harness/issues/6), since 1.2.0). Until then it runs nothing from the repository, tells Claude at session start and tells you at the end of each turn that changed code.
+
+- **What an approval covers:** the project path (physical, so each clone and each git worktree is approved separately), the exact command text, and the SHA-256 of every file inside the project that the command names, such as `scripts/verify.sh` or `scripts/check.sh` in `bash scripts/check.sh`. If any of them changes, or such a file appears or disappears, the command stops running until you approve again.
+- **Where it is stored:** in the plugin data folder (`~/.claude/plugins/data/…`), outside the repository. Nothing in the repository can approve itself, and there is no environment variable or setting that skips the approval, because a repository can set both through its own `.claude/settings.json`.
+- **Only you approve.** The skill has `disable-model-invocation: true`, so Claude cannot start it, and the hooks tell Claude not to run the approval script. Claude can still run any shell command through Bash, including the approval script or `scripts/verify.sh` itself, subject to your Claude Code permission rules: the approval gates the hook, not Claude.
+
+What the approval does **not** cover:
+
+- Files the command reads without naming them: a `Makefile` behind `make verify`, a script that `verify.sh` runs or sources, a script named relative to another folder. Name the scripts you care about in `verify.command`, or keep the logic in `scripts/verify.sh`.
+- The build itself. Approving the verify command means trusting the project's build: `xcodebuild` runs the project's Run Script phases, and SwiftPM runs package manifests and build plugins. These come from the repository and change without a new approval.
+- Claude Code's own project configuration. A repository with hooks in its `.claude/settings.json` runs them once you trust the folder in Claude Code's trust dialog, with or without swift-harness. The approval removes the execution path that swift-harness adds; it does not make an untrusted repository safe to open.
+
+**Upgrading from 1.1.x:** existing projects run no verification until you approve them once with `/swift-harness:approve-verify`. Claude is told at session start.
 
 **Protected paths are not a sandbox.** `protectedPaths` and the `project.pbxproj` guard ask for approval before the Edit, Write and MultiEdit tools change a file. A shell command run through Bash can still change those files. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`) and, for untrusted code, an isolated environment.
 
