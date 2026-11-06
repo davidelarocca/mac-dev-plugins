@@ -63,6 +63,7 @@ EOF
   chmod +x "$p/scripts/verify.sh"
   git -C "$p" add -A
   git -C "$p" commit -qm init
+  approve "$p" >/dev/null
   printf '%s' "$p"
 }
 
@@ -72,6 +73,19 @@ hook() {
   [ -n "$extra" ] || extra='{}'
   jq -nc --arg cwd "$2" --argjson extra "$extra" '{cwd: $cwd, session_id: "test"} + $extra' |
     CLAUDE_PLUGIN_DATA="$TMP/data" CLAUDE_PROJECT_DIR="$2" "$SCRIPTS/$1"
+}
+
+# The user's approval of a project's verify command (#6), as /swift-harness:approve-verify
+# gives it: read the status, then approve the digest that was shown.
+approval() { # $1 project, then approve-verify.sh arguments
+  local dir="$1"
+  shift
+  CLAUDE_PLUGIN_DATA="$TMP/data" "$SCRIPTS/approve-verify.sh" "$@" "$dir"
+}
+approve() {
+  local digest
+  digest="$(approval "$1" --status | sed -n 's/^Digest: *//p')"
+  approval "$1" --approve "$digest"
 }
 
 edit_input() { jq -nc --arg f "$1" '{tool_name: "Edit", tool_input: {file_path: $f}}'; }
@@ -404,11 +418,115 @@ hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
 echo 'let app = 7' >"$P/Sources/App.swift"
 expect_result "stop: lint set to none never requires SwiftLint" 0 '^exit=0' "$(nolint_stop "$P")"
 
+# ---------- verify command approval (#6) ----------
+
+LOG="$TMP/approval.log"
+appr_runs() { [ -f "$LOG" ] && wc -l <"$LOG" | tr -d ' ' || echo 0; }
+appr_stop() { # $1 project, $2 optional extra JSON
+  local out code
+  out="$(FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT=0 hook stop-verify.sh "$1" "${2:-}" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+
+P="$(new_project approval)"
+approval "$P" --revoke >/dev/null
+out="$(approval "$P" --status)"
+if grep -q '^Command: scripts/verify.sh fast' <<<"$out" && grep -q 'scripts/verify.sh' <<<"$(grep '^File' <<<"$out")" &&
+  grep -q '^Status: not approved' <<<"$out"; then
+  ok "approval: status shows the command, the files it runs and that it is not approved"
+else nok "approval: status shows the command, the files it runs and that it is not approved" "$out"; fi
+
+out="$(hook session-start.sh "$P" '{"source":"startup"}')"
+if grep -q 'not approved' <<<"$out" && grep -q '/swift-harness:approve-verify' <<<"$out"; then
+  ok "approval: session start tells Claude the verify command needs approval"
+else nok "approval: session start tells Claude the verify command needs approval" "${out:-<empty>}"; fi
+
+echo 'let app = 20' >"$P/Sources/App.swift"
+out="$(appr_stop "$P")"
+if [[ "$out" == exit=0* ]] && [ "$(appr_runs)" = 0 ] && grep -q 'systemMessage' <<<"$out" && grep -q 'approve-verify' <<<"$out"; then
+  ok "approval: a fresh project runs nothing at the stop and tells the user how to approve"
+else nok "approval: a fresh project runs nothing at the stop and tells the user how to approve" "runs=$(appr_runs) $out"; fi
+
+expect_result "approval: the warning is not repeated on the same code" 0 '^exit=0' "$(appr_stop "$P")" 'systemMessage'
+
+out="$(approval "$P" --approve 0000)"
+if [ $? -ne 0 ] && grep -qi 'changed' <<<"$out" && grep -q '^Status: not approved' <<<"$(approval "$P" --status)"; then
+  ok "approval: approving a digest that was not shown is refused"
+else nok "approval: approving a digest that was not shown is refused" "$out"; fi
+
+out="$(CLAUDE_PLUGIN_DATA='' "$SCRIPTS/approve-verify.sh" --status "$P" 2>&1)"
+if [ $? -ne 0 ] && grep -q 'approve-verify' <<<"$out"; then ok "approval: the script refuses to run without the plugin data folder"
+else nok "approval: the script refuses to run without the plugin data folder" "$out"; fi
+
+approve "$P" >/dev/null
+out="$(appr_stop "$P")"
+if [[ "$out" == exit=0* ]] && [ "$(appr_runs)" = 1 ]; then ok "approval: once approved, the stop runs the verify command"
+else nok "approval: once approved, the stop runs the verify command" "runs=$(appr_runs) $out"; fi
+out="$(hook session-start.sh "$P" '{"source":"resume"}')"
+if ! grep -q 'not approved' <<<"$out"; then ok "approval: session start is quiet once approved"
+else nok "approval: session start is quiet once approved" "$out"; fi
+
+printf '%s\n' 'echo extra' >>"$P/scripts/verify.sh"
+out="$(appr_stop "$P")"
+if [ "$(appr_runs)" = 1 ] && grep -q 'approve-verify' <<<"$out"; then ok "approval: a changed verify script needs a new approval"
+else nok "approval: a changed verify script needs a new approval" "runs=$(appr_runs) $out"; fi
+
+approve "$P" >/dev/null
+cp "$P/scripts/verify.sh" "$P/scripts/check.sh"
+set_config "$P" '{"verify":{"command":"bash scripts/check.sh fast"}}'
+out="$(appr_stop "$P")"
+if [ "$(appr_runs)" = 1 ] && grep -q 'approve-verify' <<<"$out"; then ok "approval: a changed verify command needs a new approval"
+else nok "approval: a changed verify command needs a new approval" "runs=$(appr_runs) $out"; fi
+if grep -q '^File.*scripts/check.sh' <<<"$(approval "$P" --status)"; then ok "approval: a script passed to an interpreter is covered"
+else nok "approval: a script passed to an interpreter is covered" "$(approval "$P" --status)"; fi
+approve "$P" >/dev/null
+echo 'exit 1' >>"$P/scripts/check.sh"
+echo 'let app = 21' >"$P/Sources/App.swift"
+out="$(appr_stop "$P")"
+if [ "$(appr_runs)" = 1 ] && grep -q 'approve-verify' <<<"$out"; then ok "approval: a changed script passed to an interpreter needs a new approval"
+else nok "approval: a changed script passed to an interpreter needs a new approval" "runs=$(appr_runs) $out"; fi
+
+Q="$TMP/approval-copy"
+cp -R "$P" "$Q"
+approve "$P" >/dev/null
+hook session-start.sh "$Q" '{"source":"startup"}' >/dev/null
+echo 'let app = 22' >"$Q/Sources/App.swift"
+out="$(appr_stop "$Q")"
+if [ "$(appr_runs)" = 1 ] && grep -q 'approve-verify' <<<"$out"; then ok "approval: an approval for one project path does not apply to another"
+else nok "approval: an approval for one project path does not apply to another" "runs=$(appr_runs) $out"; fi
+
+approval "$P" --revoke >/dev/null
+if grep -q '^Status: not approved' <<<"$(approval "$P" --status)"; then ok "approval: revoke removes the approval"
+else nok "approval: revoke removes the approval" "$(approval "$P" --status)"; fi
+
+P="$(new_project approval-lint)"
+approval "$P" --revoke >/dev/null
+set_config "$P" '{"format":"none","lint":"swiftlint","lintBlocking":true,"verify":{"command":"scripts/verify.sh fast"}}'
+git -C "$P" commit -qam "lintBlocking on"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let app = x!' >"$P/Sources/App.swift"
+FAKE_LINT=error post_edit "$P" "$P/Sources/App.swift" >/dev/null
+out="$(PATH="$PEFAKES:$PATH" FAKE_TOOL_LOG="$TOOLLOG" FAKE_LINT=error appr_stop "$P")"
+if [[ "$out" == exit=2* ]] && grep -q 'Force Unwrapping' <<<"$out" && grep -q 'not approved' <<<"$out" && [ "$(appr_runs)" = 1 ]; then
+  ok "approval: without approval, lintBlocking still blocks on lint errors and says the build did not run"
+else nok "approval: without approval, lintBlocking still blocks on lint errors and says the build did not run" "runs=$(appr_runs) $out"; fi
+echo 'let app = 23' >"$P/Sources/App.swift"
+out="$(PATH="$PEFAKES:$PATH" FAKE_TOOL_LOG="$TOOLLOG" FAKE_LINT=clean appr_stop "$P")"
+if [[ "$out" == exit=0* ]] && grep -q 'approve-verify' <<<"$out" && [ "$(appr_runs)" = 1 ]; then
+  ok "approval: without approval, a clean lint lets Claude stop with a warning"
+else nok "approval: without approval, a clean lint lets Claude stop with a warning" "runs=$(appr_runs) $out"; fi
+approve "$P" >/dev/null
+out="$(PATH="$PEFAKES:$PATH" FAKE_TOOL_LOG="$TOOLLOG" FAKE_LINT=clean appr_stop "$P")"
+if [ "$(appr_runs)" = 2 ]; then ok "approval: an unverified stop is not recorded as passed"
+else nok "approval: an unverified stop is not recorded as passed" "runs=$(appr_runs) $out"; fi
+
 # ---------- worktrees ----------
 
 P="$(new_project wt-main)"
 W="$TMP/wt-feature"
 git -C "$P" worktree add -q "$W" -b feature
+approve "$W" >/dev/null
 LOG="$TMP/wt.log"
 hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
 hook session-start.sh "$W" '{"source":"startup"}' >/dev/null

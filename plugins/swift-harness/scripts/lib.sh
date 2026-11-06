@@ -176,6 +176,40 @@ sh_lint_pending_remove() {
   mv "$list.tmp" "$list"
 }
 
+# ---------- verify command approval (#6) ----------
+# The Stop hook runs verify.command, which comes from the repository. It runs only after the
+# user approves it with /swift-harness:approve-verify. The approval lives in the per-project
+# state folder, outside the repository, and covers the project path, the command text and
+# the content of every file the command names (scripts/verify.sh, or a script passed to an
+# interpreter). Files the command reads without naming them are not covered.
+
+# What an approval covers, one line each: "root", "command", then "file <word> <sha256>".
+sh_verify_manifest() {
+  local word path
+  local -a words
+  printf 'root %s\ncommand %s\n' "$SH_ROOT" "$1"
+  read -ra words <<<"$1"
+  for word in ${words[@]+"${words[@]}"}; do
+    word="${word#[\"\']}"
+    word="${word%[\"\']}"
+    case "$word" in
+      "") continue ;;
+      "$SH_ROOT"/*) path="$word" ;;
+      /*) continue ;; # outside the project: the repository cannot change it
+      *) path="$SH_ROOT/$word" ;;
+    esac
+    [ -f "$path" ] || continue
+    printf 'file %s %s\n' "$word" "$(shasum -a 256 <"$path" | cut -d' ' -f1)"
+  done
+}
+
+sh_verify_digest() { sh_verify_manifest "$1" | shasum -a 256 | cut -d' ' -f1; }
+
+# $1 command, $2 state folder. Succeeds when the user approved exactly this command.
+sh_verify_approved() {
+  [ -n "$2" ] && [ "$(sh_verify_digest "$1")" = "$(cat "$2/verify-approved" 2>/dev/null)" ]
+}
+
 # Initialise SH_ROOT and SH_CONFIG. Returns 1 when the project has not opted in.
 sh_init() {
   sh_has_jq || return 1
