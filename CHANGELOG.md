@@ -1,13 +1,16 @@
 # Changelog
 
-## Unreleased
+## swift-harness 1.2.0 (2026-11-06)
+
+Trust and onboarding. **Upgrading:** the end-of-turn check runs nothing from the repository until you type `/swift-harness:approve-verify` once in each project (and each worktree). Claude is told at session start, and `/swift-harness:doctor` shows it.
 
 - **Breaking for existing projects:** the end-of-turn check runs the repository's `verify.command` only after you approve it ([#6](https://github.com/davidelarocca/swift-harness/issues/6)). Type `/swift-harness:approve-verify` once per project (and per worktree) after updating. Until then nothing from the repository runs, Claude is told at session start, and you get one warning per code state. The approval is stored in the plugin data folder, outside the repository, and covers the project path, the command and the content of each file it names: change any of them and the check asks again. `/swift-harness:approve-verify revoke` removes it. `lintBlocking` keeps working without the approval, but a clean lint alone is not recorded as a passed verification.
 - `/swift-harness:setup` ends by asking you to approve the generated verify command.
 - New `/swift-harness:doctor` ([#12](https://github.com/davidelarocca/swift-harness/issues/12)): a read-only diagnosis of the project's setup, one PASS / WARN / FAIL / INFO row per check with the fix. It checks jq, Xcode, the formatter and SwiftLint, unknown or invalid config keys, `{{...}}` placeholders left in generated files, protected paths that do not exist, the verify script (present, executable, scheme or packages set, packages that exist) and its approval, `.swift-format` with swift-format, the SwiftPM layout (for the planned architecture contracts) and the last verification of the current code. It changes no file and creates no state folder.
 - A verification result now belongs to the code and to the plugin version ([#18](https://github.com/davidelarocca/swift-harness/issues/18)). Before, a pass recorded by an older version still counted after an update that made the checks stricter. Now unchanged code is verified again once after an update. The project's policy (`lintBlocking`, `verify.command`) was already part of the code state.
 - More build inputs count as changes: workspaces (`contents.xcworkspacedata`), and every file under a SwiftPM `Sources/` or `Tests/` folder, so resources outside `Resources/` and test fixtures trigger the check. Xcode per-user state (`xcuserdata`) and `.DS_Store` are ignored.
-- SECURITY.md describes what the approval covers and what it does not: files the command reads without naming them, the build itself (Run Script phases, SwiftPM manifests and plugins), and Claude Code's own project hooks.
+- SECURITY.md describes what the approval covers and what it does not: files the command reads without naming them, the build itself (Run Script phases, SwiftPM manifests and plugins), and Claude Code's own project hooks. The "never does" guarantee now covers only the plugin's own scripts: an approved verify command runs with your permissions, and even the generated `verify.sh` downloads dependencies and writes SwiftPM and Xcode caches outside the project.
+- Smoke suite: 11 scenarios. New: `verify-unapproved`, `approve-verify` and `doctor`.
 
 ## swift-harness 1.1.3 (2026-11-05)
 

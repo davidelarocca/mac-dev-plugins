@@ -227,7 +227,7 @@ scripts/verify.sh
 
 ## Roadmap
 
-Next up: **v1.2.0, trust and onboarding.** Repository commands run only after you approve them, and `/swift-harness:doctor` diagnoses your setup. After that: architecture contracts for SwiftPM projects and a validated component registry. See the full [roadmap](ROADMAP.md).
+Next up: **v1.3.0, architecture you can enforce.** Architecture contracts for SwiftPM projects, a validated component registry, and a real-session test that Claude reuses an existing component instead of building a second one. See the full [roadmap](ROADMAP.md).
 
 ## Limitations
 
