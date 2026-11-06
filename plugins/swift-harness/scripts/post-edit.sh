@@ -103,6 +103,16 @@ $SH_LINT_OUTPUT}"
   fi
 fi
 
+# ---- Component registry (#7) ----
+# Not blocking: a reminder next to the edit. Wrong entries block at the end of the turn.
+if sh_registry_on; then
+  registry="$(sh_registry)"
+  missing="$("$(dirname "$0")/registry.sh" missing "$SH_ROOT" "$rel" | cut -f1 | paste -sd, - | sed 's/,/, /g')"
+  [ -z "$missing" ] || add_note "Component registry: $rel declares shared UI that $registry does not list: $missing. Add an entry in the same change, or list it under Internal if it is not meant for reuse."
+  entries="$("$(dirname "$0")/registry.sh" entries "$SH_ROOT" "$rel" | paste -sd, - | sed 's/,/, /g')"
+  [ -z "$entries" ] || add_note "Component registry: $rel is the file of $entries in $registry. If you changed its API, variants, behavior or callers, update the entry in the same change."
+fi
+
 # ---- Architecture contracts (#13) ----
 # An edited manifest is checked at once. dump-package runs Package.swift, so only with the
 # approved verify command, like the end-of-turn check.

@@ -1128,6 +1128,261 @@ expect_result "contract-watch: a contract created in the session is shown" 0 'cr
 
 fi
 
+# ---------- component registry (#7) ----------
+
+# A design system with three registered components, an internal gallery, a private helper
+# and a retired entry. Sources need not compile: nothing here builds them.
+registry_project() { # $1 name
+  local p
+  p="$(new_project "$1")"
+  mkdir -p "$p/Sources/DesignSystem" "$p/docs"
+  cat >"$p/Sources/DesignSystem/PillCenter.swift" <<'EOF'
+import SwiftUI
+
+@MainActor @Observable
+public final class PillCenter {
+    public init() {}
+}
+
+public struct PillHost: ViewModifier {
+    public func body(content: Content) -> some View { content }
+}
+
+extension View {
+    public func pillHost() -> some View { modifier(PillHost()) }
+}
+EOF
+  cat >"$p/Sources/DesignSystem/Badge.swift" <<'EOF'
+import SwiftUI
+
+public struct Badge<Label: View>: View {
+    let label: Label
+    public var body: some View { label }
+}
+
+private struct BadgeShape: View {
+    var body: some View { EmptyView() }
+}
+
+struct Outer {
+    struct Nested: View {
+        var body: some View { EmptyView() }
+    }
+}
+EOF
+  cat >"$p/Sources/DesignSystem/Gallery.swift" <<'EOF'
+import SwiftUI
+
+struct ComponentGallery: View {
+    var body: some View { EmptyView() }
+}
+EOF
+  cat >"$p/docs/COMPONENT_REGISTRY.md" <<'EOF'
+# Component registry
+
+## Components
+
+| ID | Name | Purpose | Use when | Don't use when | API entry point | File | Used by | Tests |
+|---|---|---|---|---|---|---|---|---|
+| UI-001 | PillCenter | Transient feedback | Confirmations | Errors that need a decision | `pills.show(.success("..."))` | `Sources/DesignSystem/PillCenter.swift` | LibraryView | previews |
+| UI-002 | `pillHost` | Hosts the pills once per window | Root views | | `.pillHost()` | Sources/DesignSystem/PillCenter.swift:13 | RootView | none |
+| UI-003 | Badge | A label in a capsule, `a \| b` variants | Counts | | `Badge { Text("3") }` | Sources/DesignSystem/Badge.swift | none yet | previews |
+
+## Internal
+
+| Name | Why not registered |
+|---|---|
+| ComponentGallery | Preview gallery, not used by features |
+
+## To consolidate
+
+| Element | Locations | Differences | Plan |
+|---|---|---|---|
+| PillHost modifier | PillCenter.swift | exposed only through pillHost() | keep internal |
+
+## Retired
+
+| ID | Replaced by | Date |
+|---|---|---|
+| UI-000 | PillCenter | 2026-11-01 |
+EOF
+  set_config "$p" '{"verify":{"command":"scripts/verify.sh fast","maxAttempts":3},"registry":{"sources":["Sources/DesignSystem"]}}'
+  git -C "$p" add -A && git -C "$p" commit -qm registry
+  approve "$p" >/dev/null
+  printf '%s' "$p"
+}
+registry() { # registry.sh arguments; prints "exit=<code>" then the output
+  local out code
+  out="$("$SCRIPTS/registry.sh" "$@" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+REG_FILE=docs/COMPONENT_REGISTRY.md
+reg_edit() { sed -i '' "$2" "$1/$REG_FILE"; }
+
+R="$(registry_project registry-ok)"
+expect_result "registry: a correct registry passes" 0 '^exit=0$' "$(registry check "$R")"
+expect_result "registry: the summary counts the components" 0 '3 components' "$(registry summary "$R")"
+expect_result "registry: nothing missing when every component is listed, internal or under To consolidate" 0 '^exit=0$' "$(registry missing "$R")"
+
+R="$(registry_project registry-stale)"
+reg_edit "$R" 's|`Sources/DesignSystem/PillCenter.swift`|Sources/DesignSystem/Feedback/PillCenter.swift|'
+out="$(registry check "$R")"
+expect_result "registry: a stale path fails, naming the entry and the path" 1 'UI-001 PillCenter: .*Sources/DesignSystem/Feedback/PillCenter\.swift does not exist' "$out"
+expect_result "registry: the failure names the registry file and the line" 1 'docs/COMPONENT_REGISTRY\.md:7: UI-001' "$out"
+expect_result "registry: the failure says how to fix it" 1 'same change' "$out"
+
+R="$(registry_project registry-undeclared)"
+sed -i '' 's/public struct Badge</public struct Tag</' "$R/Sources/DesignSystem/Badge.swift"
+expect_result "registry: a name not declared in its file fails" 1 'UI-003 Badge: .*not declared in Sources/DesignSystem/Badge\.swift' "$(registry check "$R")"
+expect_result "registry: a renamed component is reported as missing too" 0 'Tag	Sources/DesignSystem/Badge\.swift:3' "$(registry missing "$R")"
+
+R="$(registry_project registry-duplicates)"
+reg_edit "$R" 's/^| UI-003 | Badge |/| UI-002 | PillCenter |/'
+out="$(registry check "$R")"
+expect_result "registry: a duplicate ID fails" 1 'UI-002.* more than once' "$out"
+expect_result "registry: a duplicate name fails" 1 'PillCenter.* more than once' "$out"
+
+R="$(registry_project registry-retired)"
+reg_edit "$R" 's/^| UI-000 |/| UI-003 |/'
+expect_result "registry: a retired ID still listed fails" 1 'UI-003.*Retired' "$(registry check "$R")"
+
+R="$(registry_project registry-columns)"
+awk 'BEGIN{FS=OFS="|"} /^\| (ID|---|UI-)/ {gsub(/\\\|/, "\001"); $0=$0; t=$3; $3=$8; $8=t; gsub("\001", "\\|")} {print}' "$R/$REG_FILE" >"$R/reg.tmp" && mv "$R/reg.tmp" "$R/$REG_FILE"
+expect_result "registry: columns are found by their header, in any order" 0 '^exit=0$' "$(registry check "$R")"
+
+R="$(registry_project registry-template)"
+cp "$PLUGIN/skills/setup/templates/docs/COMPONENT_REGISTRY.md" "$R/$REG_FILE"
+expect_result "registry: the setup template's empty row passes" 0 '^exit=0$' "$(registry check "$R")"
+expect_result "registry: with the empty template, components in sources are missing" 0 'Badge	Sources/DesignSystem/Badge\.swift:3' "$(registry missing "$R")"
+
+R="$(registry_project registry-format)"
+printf '# Components\n\n- PillCenter: the pill\n' >"$R/$REG_FILE"
+expect_result "registry: a registry without a Name and File table is not checked, and says why" 3 'Name and File' "$(registry check "$R")"
+
+R="$(registry_project registry-none)"
+rm "$R/$REG_FILE"
+expect_result "registry: no registry file means nothing to check" 0 '^exit=0$' "$(registry check "$R")"
+
+R="$(registry_project registry-missing)"
+cat >"$R/Sources/DesignSystem/Toast.swift" <<'EOF'
+import SwiftUI
+
+public struct Toast: View {
+    public var body: some View { EmptyView() }
+}
+
+public struct ToastButtonStyle: ButtonStyle {
+    public func makeBody(configuration: Configuration) -> some View { configuration.label }
+}
+
+fileprivate struct ToastShadow: ViewModifier {
+    func body(content: Content) -> some View { content }
+}
+
+public final class ToastQueue {}
+
+struct ToastStack: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize { .zero }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {}
+}
+
+struct ToastEffectView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView { NSVisualEffectView() }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+EOF
+out="$(registry missing "$R")"
+expect_result "registry: an unlisted View in sources is missing" 0 'Toast	Sources/DesignSystem/Toast\.swift:3' "$out"
+expect_result "registry: an unlisted ButtonStyle in sources is missing" 0 'ToastButtonStyle	' "$out"
+expect_result "registry: an unlisted Layout in sources is missing" 0 'ToastStack	' "$out"
+expect_result "registry: an unlisted AppKit representable in sources is missing" 0 'ToastEffectView	' "$out"
+expect_result "registry: private, nested and non-UI types are not components" 0 'Toast' "$out" 'ToastShadow|ToastQueue|BadgeShape|Nested'
+expect_result "registry: missing can be limited to one file" 0 '^exit=0$' "$(registry missing "$R" "$R/Sources/DesignSystem/Badge.swift")"
+expect_result "registry: a missing entry does not fail the check" 0 '^exit=0$' "$(registry check "$R")"
+set_config "$R" '{"verify":{"command":"scripts/verify.sh fast"}}'
+expect_result "registry: without registry.sources nothing is reported missing" 0 '^exit=0$' "$(registry missing "$R")"
+
+R="$(registry_project registry-custom-path)"
+mkdir -p "$R/design"
+git -C "$R" mv "$REG_FILE" design/REGISTRY.md
+sed -i '' 's|Sources/DesignSystem/Badge.swift |Sources/DesignSystem/Gone.swift |' "$R/design/REGISTRY.md"
+set_config "$R" '{"registry":{"path":"design/REGISTRY.md","sources":["Sources/DesignSystem"]}}'
+expect_result "registry: registry.path is read" 1 'design/REGISTRY\.md.*Gone\.swift does not exist' "$(registry check "$R")"
+
+# --- in the hooks ---
+
+R="$(registry_project registry-fp)"
+base="$(cd "$R" && jq -nc --arg cwd "$R" '{cwd: $cwd}' | CLAUDE_PROJECT_DIR="$R" bash -c '. "$1/lib.sh"; sh_init; sh_fingerprint' _ "$SCRIPTS")"
+echo '| UI-009 | X | | | | | Sources/DesignSystem/Badge.swift | | |' >>"$R/$REG_FILE"
+now="$(cd "$R" && jq -nc --arg cwd "$R" '{cwd: $cwd}' | CLAUDE_PROJECT_DIR="$R" bash -c '. "$1/lib.sh"; sh_init; sh_fingerprint' _ "$SCRIPTS")"
+if [ -n "$base" ] && [ "$base" != "$now" ]; then ok "fingerprint: a registry edit counts, so a fixed registry is checked again"
+else nok "fingerprint: a registry edit counts, so a fixed registry is checked again" "$base / $now"; fi
+
+rstop() { # $1 project; prints "exit=<code>" then stdout+stderr
+  local out code
+  out="$(FAKE_VERIFY_LOG=/dev/null FAKE_VERIFY_EXIT=0 hook stop-verify.sh "$1" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+
+R="$(registry_project registry-stop)"
+hook session-start.sh "$R" '{"source":"startup"}' >/dev/null
+sed -i '' 's/public struct Badge</public struct Tag</' "$R/Sources/DesignSystem/Badge.swift"
+out="$(rstop "$R")"
+expect_result "stop: a registry error blocks the turn, with verify passing" 2 'UI-003 Badge: .*not declared' "$out"
+expect_result "stop: the registry is named in the failure header" 2 'scripts/verify\.sh fast \+ component registry' "$out"
+reg_edit "$R" 's/^| UI-003 | Badge |/| UI-003 | Tag |/'
+expect_result "stop: a registry fix alone is checked again and passes" 0 '^exit=0' "$(rstop "$R")" 'not declared'
+
+R="$(registry_project registry-stop-unapproved)"
+hook session-start.sh "$R" '{"source":"startup"}' >/dev/null
+echo '# changed' >>"$R/scripts/verify.sh"
+sed -i '' 's/public struct Badge</public struct Tag</' "$R/Sources/DesignSystem/Badge.swift"
+out="$(rstop "$R")"
+expect_result "stop: the registry is checked without the verify approval, since it runs no project code" 2 'not declared' "$out"
+
+R="$(registry_project registry-stop-format)"
+hook session-start.sh "$R" '{"source":"startup"}' >/dev/null
+printf '# Components\n\n- PillCenter\n' >"$R/$REG_FILE"
+echo '// changed' >>"$R/Sources/DesignSystem/Badge.swift"
+expect_result "stop: a registry that cannot be read does not block" 0 '^exit=0' "$(rstop "$R")"
+
+R="$(registry_project registry-stop-off)"
+hook session-start.sh "$R" '{"source":"startup"}' >/dev/null
+set_config "$R" '{"verify":{"command":"scripts/verify.sh fast"},"registry":{"enabled":false}}'
+approve "$R" >/dev/null
+sed -i '' 's/public struct Badge</public struct Tag</' "$R/Sources/DesignSystem/Badge.swift"
+expect_result "stop: registry.enabled false turns the check off" 0 '^exit=0' "$(rstop "$R")"
+
+R="$(registry_project registry-post-edit)"
+set_config "$R" '{"format":"none","lint":"none","registry":{"sources":["Sources/DesignSystem"]}}'
+printf 'import SwiftUI\n\npublic struct Toast: View {\n    public var body: some View { EmptyView() }\n}\n' >"$R/Sources/DesignSystem/Toast.swift"
+out="$(post_edit "$R" "$R/Sources/DesignSystem/Toast.swift")"
+expect_result "post-edit: a new component not in the registry is pointed out" 0 'Toast.*docs/COMPONENT_REGISTRY\.md' "$out"
+out="$(post_edit "$R" "$R/Sources/DesignSystem/Badge.swift")"
+expect_result "post-edit: editing a registered component's file names its entry" 0 'UI-003 Badge' "$out"
+expect_result "post-edit: the registry note does not block" 0 '^exit=0' "$out"
+out="$(post_edit "$R" "$R/Sources/App.swift")"
+expect_result "post-edit: files outside the registry and its sources get no registry note" 0 '^exit=0' "$out" 'COMPONENT_REGISTRY'
+
+R="$(registry_project registry-doctor)"
+expect_row "doctor: a correct registry passes" "$(doctor "$R")" PASS 'Component registry' '3 components'
+cp "$R/Sources/DesignSystem/Gallery.swift" "$R/Sources/DesignSystem/Toast.swift"
+sed -i '' 's/ComponentGallery/Toast/' "$R/Sources/DesignSystem/Toast.swift"
+expect_row "doctor: a component missing from the registry warns" "$(doctor "$R")" WARN 'Component registry' 'not listed: Toast'
+reg_edit "$R" 's|`Sources/DesignSystem/PillCenter.swift`|Sources/Gone.swift|'
+out="$(doctor "$R")"
+expect_row "doctor: a stale registry path fails" "$out" FAIL 'Component registry' 'Gone\.swift does not exist'
+expect_row "doctor: registry keys are known" "$out" PASS 'Config keys' 'all known'
+set_config "$R" '{"registry":{"sources":"Sources/DesignSystem","path":3}}'
+out="$(doctor "$R")"
+expect_row "doctor: registry.sources must be a list" "$out" FAIL 'Config' 'registry\.sources must be a list'
+expect_row "doctor: registry.path must be a path" "$out" FAIL 'Config' 'registry\.path must be'
+rm "$R/$REG_FILE"
+set_config "$R" '{}'
+expect_row "doctor: no registry is explained" "$(doctor "$R")" INFO 'Component registry' 'none'
+
 # ---------- summary ----------
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
