@@ -12,7 +12,8 @@ The goal is that every interaction pattern exists once. Visual bugs usually come
 1. Read `docs/COMPONENT_REGISTRY.md` and `docs/DESIGN_SYSTEM.md` if they exist.
 2. Search the code for the same behavior, not only the same name. Examples: for a top notification search `overlay(alignment: .top`, `transition(.move(edge: .top`, `Toast`, `Pill`, `Banner`, `HUD`; for a hover button search `onHover`, `ButtonStyle`.
 3. List every place the new or changed element will appear.
-4. If the change displays an entity (a row, tile, header, menu or inspector showing a domain object), read its rows in `docs/PRODUCT_MAP.md`: its destination and how it is opened, its relations, its action set. Without a map, find them in the code: an existing appearance of the same entity shows the navigation call and the shared menu.
+4. If the change touches the layout of a screen listed in `docs/LAYOUT_CONTRACT.md` (or a view inside it), read its row: Min, Default, Max, Compact below and the compact behavior, and the presented UI opened from it.
+5. If the change displays an entity (a row, tile, header, menu or inspector showing a domain object), read its rows in `docs/PRODUCT_MAP.md`: its destination and how it is opened, its relations, its action set. Without a map, find them in the code: an existing appearance of the same entity shows the navigation call and the shared menu.
 
 ## 2. Decide
 
@@ -25,6 +26,8 @@ The goal is that every interaction pattern exists once. Visual bugs usually come
 | Two or more existing copies | Stop and propose consolidation first. Do not add a third |
 
 State the decision in one line before implementing.
+
+For a screen in the layout contract, design for its whole range of sizes, not the size of your preview: at Min nothing is clipped or pushed out, below Compact below the compact behavior applies, popovers open inside the window. Prefer layouts that adapt (`ViewThatFits`, flexible frames, a menu for overflow) to fixed widths and `.fixedSize()` rows.
 
 For an entity shown in a new place, the default is the whole: it opens its destination, related entities shown with it open theirs (no plain text styled as a link), and it offers its action set through the shared menu or command. Leave something out only for a reason, and say which.
 
@@ -39,12 +42,14 @@ For an entity shown in a new place, the default is the whole: it opens its desti
 
 - Previews for every state of the component: default, hover or pressed where relevant, disabled, selected, light and dark, long and localized text.
 - Snapshot tests for shared components when the project has snapshot testing set up. Re-record only intentional changes and mention it.
+- For a screen in the layout contract: previews at its Min and Default sizes, and its `LayoutContract.check` tests pass (they run in the verify command). A failure gives the size and the width needed: fix the layout, or change the contract only when the user agrees the screen's sizes change.
 - Build. For non-trivial changes, delegate a review to the `ui-reviewer` agent with the list of changed files.
 - If the component is used in several places, check each caller listed in the registry.
 
 ## 5. Record
 
 - Update `docs/COMPONENT_REGISTRY.md` in the same change: new entry, new variant, new callers, or a move to "Retired".
+- Update `docs/LAYOUT_CONTRACT.md` if a screen's sizes, compact behavior or presented UI changed, or a main screen was added (with its `LayoutContract.check` test).
 - Update `docs/PRODUCT_MAP.md` if it exists: new appearances, actions or relations, and deliberate omissions under "Exceptions".
 - If you found duplicates you did not fix, add them to "To consolidate".
 - If you introduced a new pattern, ask whether it deserves an ADR.

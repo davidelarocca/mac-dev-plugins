@@ -113,6 +113,13 @@ if sh_registry_on; then
   [ -z "$entries" ] || add_note "Component registry: $rel is the file of $entries in $registry. If you changed its API, variants, behavior or callers, update the entry in the same change."
 fi
 
+# ---- Layout contract (#34) ----
+# Not blocking: the sizes a screen in this file must hold. The layout tests measure them.
+if sh_layout_on; then
+  screens="$("$(dirname "$0")/layout.sh" entries "$SH_ROOT" "$rel" | paste -sd ';' - | sed 's/;/; /g')"
+  [ -z "$screens" ] || add_note "Layout contract: $rel draws $screens in $(sh_layout). If you changed its layout, it must still fit at those sizes (LayoutContract.check in the tests measures it); update the contract in the same change if the sizes or the compact behavior changed."
+fi
+
 # ---- Architecture contracts (#13) ----
 # An edited manifest is checked at once. dump-package runs Package.swift, so only with the
 # approved verify command, like the end-of-turn check.

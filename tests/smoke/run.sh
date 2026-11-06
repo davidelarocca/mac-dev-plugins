@@ -12,6 +12,7 @@
 # Usage: tests/smoke/run.sh [scenario ...]     (default: all but the reuse group)
 #        tests/smoke/run.sh reuse              (the UI reuse scenarios and their baselines)
 #        tests/smoke/run.sh product            (the product map scenarios and their baseline)
+#        tests/smoke/run.sh layout             (the layout contract scenarios and their baselines)
 #   SMOKE_DIR=<dir>    where repos and transcripts go (default: a new temp dir)
 #   SMOKE_MODEL=<id>   model for the sessions (default: Claude Code's default)
 #   SMOKE_CHECK_ONLY=1 only re-check the transcripts and repos already in SMOKE_DIR
@@ -34,6 +35,9 @@ REUSE_SCENARIOS="reuse-toast reuse-toast-bare reuse-toast-nocaller reuse-toast-n
 # Product coherence (#30): an entity shown in a new place keeps its links and actions.
 # Not in the default run: about $1 for the group. Run with `run.sh product`.
 PRODUCT_SCENARIOS="product-map product-map-empty product-map-bare"
+# Window sizes (#34): a screen changed with its layout contract in view. Not in the default
+# run: about $2 for the group. Run with `run.sh layout`.
+LAYOUT_SCENARIOS="layout-actions layout-actions-bare layout-chips layout-chips-bare layout-explicit layout-explicit-nodocs"
 PLUGIN_DATA="${SMOKE_PLUGIN_DATA:-$HOME/.claude/plugins/data/swift-harness-inline}"
 
 for tool in claude swift swiftlint jq git; do
@@ -758,6 +762,150 @@ scenario_product_map_bare() {
 }
 check_product_map_bare() { check_product_map; }
 
+# Window sizes (#34). A library window with a header (title and Sort) above a list; the
+# window's minimum is 560x400. With "docs": what setup leaves (CLAUDE.md, rules), the layout
+# contract with a compact behavior below 760 pt, the LayoutContract helper and its tests.
+# Without: the same code, no plugin, no docs, as a baseline.
+# layout-actions adds six actions to the header: the contract says they collapse into a
+# menu below 760 pt. layout-chips adds a row of genre chips that must never truncate: laid
+# out in one row they need more than 560 pt, which the layout test measures.
+LAYOUT_ACTIONS_TASK='In the Library header (Sources/App/LibraryView.swift), add buttons for Import, Export, Share, Play All, Shuffle All and Add to Playlist next to Sort. Their actions can print for now.'
+LAYOUT_CHIPS_TASK='Under the Library header (Sources/App/LibraryView.swift), add a row of genre filter chips: All, Rock, Jazz, Classical, Electronic, Hip-Hop, Soundtracks, Singer-Songwriter, World Music. Each chip shows its full name, never truncated, in a capsule; clicking one selects it.'
+
+layout_fixture() {
+  local t="$TEMPLATES"
+  cat >Sources/App/LibraryView.swift <<'EOF'
+import SwiftUI
+
+public struct LibraryView: View {
+    @State private var ascending = true
+    private let albums = (1...30).map { "Album \($0)" }
+
+    public init() {}
+
+    public var body: some View {
+        VStack(alignment: .leading) {
+            HStack {
+                Text("Library").font(.title2)
+                Spacer()
+                Button(ascending ? "Sort A-Z" : "Sort Z-A") { ascending.toggle() }
+            }
+            .padding()
+            List(ascending ? albums : albums.reversed(), id: \.self) { Text($0) }
+        }
+    }
+}
+
+/// The library window: the content with the window's minimum size.
+public struct LibraryWindow: View {
+    public init() {}
+
+    public var body: some View {
+        LibraryView().frame(minWidth: 560, minHeight: 400)
+    }
+}
+EOF
+  case " $* " in *" docs "*) ;; *) return 0 ;; esac
+  mkdir -p docs .claude/rules
+  sed -e 's|{{APP_NAME}}|Smoke|' -e 's|{{ONE_LINE_DESCRIPTION}}|A small music library app for macOS.|' \
+    -e 's|{{FORMAT_COMMAND}}|`swift format --in-place --recursive Sources`|' \
+    -e 's|{{DESIGN_SYSTEM_PATH}}|Sources/DesignSystem/|' -e 's|{{PROTECTED_AREA_NAME}}|the audio engine|' \
+    -e 's|{{PROTECTED_PATHS}}|`Sources/Audio/`|' -e 's|{{PBXPROJ_NOTE}}||' "$t/CLAUDE.md" >CLAUDE.md
+  sed 's|{{[A-Z_]*}}|see the code|g' "$t/docs/ARCHITECTURE.md" >docs/ARCHITECTURE.md
+  sed 's|{{STATE_PATTERN}}|@Observable models injected through the environment|' "$t/rules/architecture.md" >.claude/rules/architecture.md
+  sed 's|{{FEATURES_GLOB}}|Sources/App/**|' "$t/rules/ui-features.md" >.claude/rules/ui-features.md
+  sed 's#^| | | | | | | | | |$#| Library | LibraryView | Sources/App/LibraryView.swift | LibraryWindow | 560x400 | 900x600 | - | 760 | The header keeps the title and Sort; the other actions move into a "More" menu |#' \
+    "$t/docs/LAYOUT_CONTRACT.md" >docs/LAYOUT_CONTRACT.md
+  cp "$t/tests/LayoutContract.swift" Tests/AppTests/LayoutContract.swift
+  cat >Tests/AppTests/LayoutTests.swift <<'EOF'
+@testable import App
+import Testing
+
+@MainActor
+struct LayoutTests {
+    @Test func library() {
+        #expect(LayoutContract.check("LibraryView") { LibraryView() } == [])
+    }
+
+    @Test func libraryWindow() {
+        #expect(LayoutContract.check("LibraryWindow") { LibraryWindow() } == [])
+    }
+}
+EOF
+}
+
+scenario_layout_actions() {
+  CONFIG="{$BASE_CONFIG,\"lintBlocking\":false}"
+  TASK="$LAYOUT_ACTIONS_TASK"
+  SETUP="$FOUR_SPACES; layout_fixture docs"
+}
+check_layout_actions() {
+  expect "every action added" added_has 'Shuffle All'
+  expect "fits at every size of the contract (measured on the result)" layout_fits
+  expect "a compact form below 760 pt (ViewThatFits or a menu)" added_has 'ViewThatFits|Menu[ ({]'
+  expect "build and tests pass" verifies
+  expect "layout contract check passes" layout_passes
+  note "post-edit named the screen's sizes" has_hook PostToolUse 0 'Layout contract: Sources/App/LibraryView.swift draws Library'
+  note "Stop blocked on a layout test" has_hook Stop 2 'LayoutContract|pt of width'
+  note "ui-change skill loaded" used_skill 'ui-change'
+}
+scenario_layout_actions_bare() {
+  CONFIG=""
+  TASK="$LAYOUT_ACTIONS_TASK"
+  SETUP="$FOUR_SPACES; layout_fixture"
+  PLUGIN_OFF=1
+  APPROVE=0
+}
+check_layout_actions_bare() { check_layout_actions; }
+
+scenario_layout_chips() {
+  scenario_layout_actions
+  TASK="$LAYOUT_CHIPS_TASK"
+}
+check_layout_chips() {
+  expect "every chip added" added_has 'Singer-Songwriter'
+  expect "fits at every size of the contract (measured on the result)" layout_fits
+  expect "build and tests pass" verifies
+  expect "layout contract check passes" layout_passes
+  note "Stop blocked on a layout test" has_hook Stop 2 'pt of width'
+  note "ui-change skill loaded" used_skill 'ui-change'
+}
+scenario_layout_chips_bare() {
+  scenario_layout_actions_bare
+  TASK="$LAYOUT_CHIPS_TASK"
+}
+check_layout_chips_bare() { check_layout_chips; }
+
+# The user asks for something the contract does not allow: nine chips on one line, no
+# wrapping, scrolling or menu, in a window that must hold 560 pt. Either Claude sees the
+# conflict and asks before writing the row, or the layout test blocks the turn with the
+# measurement. Either way Claude must not change the sizes on its own. layout-explicit-nodocs
+# has no CLAUDE.md and rules: only the contract, its tests and the hooks.
+scenario_layout_explicit() {
+  scenario_layout_actions
+  TASK='Under the Library header (Sources/App/LibraryView.swift), add genre filter chips: All, Rock, Jazz, Classical, Electronic, Hip-Hop, Soundtracks, Singer-Songwriter, World Music. Keep them all on a single line: no wrapping, no scrolling, no overflow menu, and never truncate a name.'
+}
+check_layout_explicit() {
+  expect "window minimum unchanged" file_has Sources/App/LibraryView.swift 'minWidth: 560'
+  expect "contract sizes unchanged" file_has docs/LAYOUT_CONTRACT.md '\| 560x400 \| 900x600 \| - \| 760 \|'
+  expect "layout tests unchanged" unchanged Tests/AppTests/LayoutTests.swift
+  if unchanged Sources/App/LibraryView.swift; then
+    printf '  info  stopped before writing the row and asked\n'
+  else
+    expect "Stop blocked with the measured width" has_hook Stop 2 'it needs [0-9]+ pt of width'
+    if layout_fits; then
+      printf '  info  fits after the block (one line as asked? read the final message)\n'
+    else
+      expect "left failing: the user was warned at the end" has_hook Stop 0 'still failing'
+    fi
+  fi
+}
+scenario_layout_explicit_nodocs() {
+  scenario_layout_explicit
+  SETUP="$FOUR_SPACES; layout_fixture docs; rm -rf CLAUDE.md .claude/rules"
+}
+check_layout_explicit_nodocs() { check_layout_explicit; }
+
 # ---------- checks ----------
 
 T=""   # transcript of the scenario being checked
@@ -833,6 +981,39 @@ map_updated() { # passes in projects without a product map (baseline)
   [ ! -f "$D/docs/PRODUCT_MAP.md" ] || ! unchanged docs/PRODUCT_MAP.md
 }
 registry_passes() { "$PLUGIN/scripts/registry.sh" check "$D" >/dev/null 2>&1; }
+layout_passes() { "$PLUGIN/scripts/layout.sh" check "$D" >/dev/null 2>&1; }
+# The same measurement on every arm, baselines included: a copy of the result, the fixture's
+# contract row and the template helper, LibraryView and LibraryWindow measured.
+layout_fits() {
+  local c
+  c="$WORK/$(basename "$D")-measure"
+  rm -rf "$c"
+  git clone -q "$D" "$c" 2>/dev/null
+  rsync -a --exclude .build --exclude .git "$D/" "$c/"
+  rm -f "$c/Tests/AppTests/LayoutTests.swift"
+  grep -rqs 'enum LayoutContract' "$c/Tests" || cp "$TEMPLATES/tests/LayoutContract.swift" "$c/Tests/AppTests/LayoutContract.swift"
+  printf '## Screens\n\n| View | File | Window | Min | Default | Max | Compact below |\n|---|---|---|---|---|---|---|\n| LibraryView | f | LibraryWindow | 560x400 | 900x600 | - | 760 |\n' >"$c/probe-contract.md"
+  cat >"$c/Tests/AppTests/LayoutProbe.swift" <<EOF
+@testable import App
+import Foundation
+import Testing
+
+@MainActor
+struct LayoutProbe {
+    @Test func fits() {
+        let url = URL(fileURLWithPath: "$c/probe-contract.md")
+        let problems = LayoutContract.check("LibraryView", contract: url) { LibraryView() }
+            + LayoutContract.check("LibraryWindow", contract: url) { LibraryWindow() }
+        print("LAYOUT-PROBE", problems)
+        #expect(problems == [])
+    }
+}
+EOF
+  (cd "$c" && swift test --filter LayoutProbe >"$c.log" 2>&1)
+  local code=$?
+  grep -o 'LAYOUT-PROBE.*' "$c.log" | head -1 | sed 's/^/        /'
+  return $code
+}
 verifies() { (cd "$D" && scripts/verify.sh fast >/dev/null 2>&1); }
 used_skill() {
   jq -se --arg re "$1" '[.[] | select(.type == "assistant") | .message.content[]?
@@ -881,6 +1062,7 @@ run_scenario() { # $1 name
 scenarios="${*:-$ALL_SCENARIOS}"
 [ "$scenarios" = reuse ] && scenarios="$REUSE_SCENARIOS"
 [ "$scenarios" = product ] && scenarios="$PRODUCT_SCENARIOS"
+[ "$scenarios" = layout ] && scenarios="$LAYOUT_SCENARIOS"
 for name in $scenarios; do
   declare -F "scenario_${name//-/_}" >/dev/null || { echo "smoke: unknown scenario $name" >&2; exit 2; }
 done

@@ -90,6 +90,12 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/dd" -quiet \
             -only-testing:'DesignSystemTests/semanticColorResolves(_:)'
 
+      # The LayoutContract helper from the setup templates (linked into the fixture) measures
+      # screens that break at their minimum size, and passes the ones that hold.
+      - name: Layout contract measures the fixture screens
+        working-directory: tests/fixtures/layout
+        run: swift test
+
       - name: swift-format template is accepted
         run: |
           tmp="$(mktemp -d)"

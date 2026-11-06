@@ -39,7 +39,8 @@ reg_rel="${reg_rel#./}"
 registry="$root/$reg_rel"
 [ -f "$registry" ] || exit 0
 
-# One record per table row, tab-separated:
+# One record per table row, fields separated by \037 (with a tab, read merges empty cells,
+# so a row without an ID lost a field):
 #   C <line> <id> <name> <files>   a Components row
 #   R <line> <id>                  a Retired row
 #   K <row text>                   an Internal or To consolidate row
@@ -69,9 +70,9 @@ parse() {
         next
       }
       if (c[1] ~ /^:?-+:?$/) next
-      if (sec ~ /^components/ && ni && fi) printf "C\t%d\t%s\t%s\t%s\n", NR, (ii ? c[ii] : ""), c[ni], c[fi]
-      else if (sec ~ /^retired/) printf "R\t%d\t%s\n", NR, c[1]
-      else if (sec ~ /^(internal|to consolidate)/) { gsub(/\t/, " ", row); printf "K\t%s\n", row }
+      if (sec ~ /^components/ && ni && fi) printf "C\037%d\037%s\037%s\037%s\n", NR, (ii ? c[ii] : ""), c[ni], c[fi]
+      else if (sec ~ /^retired/) printf "R\037%d\037%s\n", NR, c[1]
+      else if (sec ~ /^(internal|to consolidate)/) { gsub(/\t/, " ", row); printf "K\037%s\n", row }
       next
     }
     { intable = 0 }
@@ -104,7 +105,7 @@ case "$mode" in
     problem() { problems="$problems- $reg_rel:$1: $2"$'\n'; }
     ids=""
     names=""
-    while IFS=$'\t' read -r kind line id name_cell file_cell; do
+    while IFS=$'\037' read -r kind line id name_cell file_cell; do
       [ "$kind" = C ] || continue
       name="$(name_of "$name_cell")"
       # The template's empty example row.
@@ -138,7 +139,7 @@ case "$mode" in
         problem "$line" "$label: $name is not declared in $(printf '%s' "$paths" | paste -sd, - | sed 's/,/, /g') (renamed or moved?)."
       fi
     done <<<"$records"
-    while IFS=$'\t' read -r kind line id _; do
+    while IFS=$'\037' read -r kind line id _; do
       [ "$kind" = R ] && [ -n "$id" ] || continue
       grep -qxF -- "$id" <<<"$ids" && problem "$line" "$id is under Retired and still under Components."
     done <<<"$records"
@@ -150,7 +151,7 @@ case "$mode" in
 
   summary)
     count=0
-    while IFS=$'\t' read -r kind _ _ name_cell file_cell; do
+    while IFS=$'\037' read -r kind _ _ name_cell file_cell; do
       [ "$kind" = C ] || continue
       [ -n "$(name_of "$name_cell")" ] || [ -n "$file_cell" ] || continue
       count=$((count + 1))
@@ -159,7 +160,7 @@ case "$mode" in
     ;;
 
   missing)
-    listed="$(while IFS=$'\t' read -r kind _ _ name_cell _; do
+    listed="$(while IFS=$'\037' read -r kind _ _ name_cell _; do
       [ "$kind" = C ] && name_of "$name_cell" && echo
     done <<<"$records")"
     known="$(grep '^K' <<<"$records")"
@@ -207,7 +208,7 @@ case "$mode" in
   entries)
     target="${1:?usage: registry.sh entries <project root> <file>}"
     target="${target#"$root"/}"
-    while IFS=$'\t' read -r kind _ id name_cell file_cell; do
+    while IFS=$'\037' read -r kind _ id name_cell file_cell; do
       [ "$kind" = C ] || continue
       files_of "$file_cell" | grep -qxF -- "$target" || continue
       printf '%s\n' "${id:+$id }$(name_of "$name_cell")"
