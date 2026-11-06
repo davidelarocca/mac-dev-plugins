@@ -4,7 +4,8 @@
 #   scripts/verify.sh full   -> run before merging a branch.
 # Exit code 0 = pass, anything else = fail. Errors go to stdout/stderr for Claude to read.
 # It never reports PASS without running at least one build or test: SwiftLint is an extra
-# check, not a substitute.
+# check, not a substitute. When a listed platform got no build or test (packages only, so
+# swift test ran on this Mac alone), the result is PARTIAL, never PASS.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -16,6 +17,9 @@ XCODE_CONTAINER="{{XCODE_CONTAINER_FLAG}}"   # e.g. -project MyApp.xcodeproj or 
 SCHEME="{{SCHEME}}"                          # empty if the project is packages only
 # shellcheck disable=SC1083 # {{LOCAL_PACKAGES}} is replaced by /swift-harness:setup
 PACKAGES=({{LOCAL_PACKAGES}})                  # e.g. ("Packages/DesignSystem" "Packages/Domain"), or () for none
+# shellcheck disable=SC1083 # {{PLATFORMS}} is replaced by /swift-harness:setup
+PLATFORMS=({{PLATFORMS}})                       # platforms the scheme is built and tested on: ("macOS"), ("iOS") or ("macOS" "iOS")
+IOS_SIMULATOR="{{IOS_SIMULATOR}}"              # simulator for iOS tests in full mode, e.g. "iPhone 16" (xcrun simctl list devices available)
 # Separate DerivedData so command-line builds never fight with an open Xcode for the build database.
 DERIVED_DATA=".build/DerivedData"
 # SwiftLint baseline: set to the file path once created, so only new violations count.
@@ -27,8 +31,23 @@ case "$MODE" in
   *) printf 'verify: unknown mode "%s". Use fast or full.\n' "$MODE"; exit 2 ;;
 esac
 
-if [[ "$XCODE_CONTAINER$SCHEME" == *"{{"* ]] || [[ "${PACKAGES[*]-}" == *"{{"* ]]; then
+if [[ "$XCODE_CONTAINER$SCHEME$IOS_SIMULATOR" == *"{{"* ]] || [[ "${PACKAGES[*]-}${PLATFORMS[*]-}" == *"{{"* ]]; then
   printf 'verify: NOT CONFIGURED. scripts/verify.sh still contains {{...}} placeholders: fill in the project settings at the top.\n'
+  exit 2
+fi
+
+for platform in ${PLATFORMS[@]+"${PLATFORMS[@]}"}; do
+  case "$platform" in
+    macOS | iOS) ;;
+    *) printf 'verify: NOT CONFIGURED. Unknown platform "%s" in PLATFORMS: use macOS or iOS.\n' "$platform"; exit 2 ;;
+  esac
+done
+if [ -n "$SCHEME" ] && [ "${#PLATFORMS[@]}" -eq 0 ]; then
+  printf 'verify: NOT CONFIGURED. SCHEME is set but PLATFORMS is empty: list the platforms to build, e.g. PLATFORMS=("macOS").\n'
+  exit 2
+fi
+if [ -n "$SCHEME" ] && [ "$MODE" = "full" ] && [[ " ${PLATFORMS[*]-} " == *" iOS "* ]] && [ -z "$IOS_SIMULATOR" ]; then
+  printf 'verify: NOT CONFIGURED. iOS tests need a simulator: set IOS_SIMULATOR (see xcrun simctl list devices available).\n'
   exit 2
 fi
 
@@ -36,6 +55,8 @@ fail=0
 ran=0      # builds and test runs
 linted=0   # SwiftLint runs (full mode), counted separately
 skipped=""
+checked=""   # platforms that got at least one build or test
+failed_on="" # platforms with a failing build or test
 
 step() { printf '\n== %s ==\n' "$1"; }
 
@@ -46,16 +67,30 @@ if [ -n "$XCODE_CONTAINER" ]; then
   [ "${XCODE_CONTAINER#* }" = "$XCODE_CONTAINER" ] || CONTAINER_ARGS+=("${XCODE_CONTAINER#* }")
 fi
 
-run_xcodebuild() {
-  local action="$1"
+# Building needs no simulator: any iOS simulator destination compiles. Tests run on the named one.
+destination() { # $1 platform, $2 action
+  case "$1" in
+    macOS) printf 'platform=macOS' ;;
+    iOS) if [ "$2" = test ]; then printf 'platform=iOS Simulator,name=%s' "$IOS_SIMULATOR"; else printf 'generic/platform=iOS Simulator'; fi ;;
+  esac
+}
+
+run_xcodebuild() { # $1 action, $2 platform
+  local action="$1" dest
+  dest="$(destination "$2" "$1")"
   if command -v xcbeautify >/dev/null 2>&1; then
-    xcodebuild ${CONTAINER_ARGS[@]+"${CONTAINER_ARGS[@]}"} -scheme "$SCHEME" -destination 'platform=macOS' \
+    xcodebuild ${CONTAINER_ARGS[@]+"${CONTAINER_ARGS[@]}"} -scheme "$SCHEME" -destination "$dest" \
       -derivedDataPath "$DERIVED_DATA" "$action" 2>&1 | xcbeautify --quiet
     return "${PIPESTATUS[0]}"
   fi
-  xcodebuild ${CONTAINER_ARGS[@]+"${CONTAINER_ARGS[@]}"} -scheme "$SCHEME" -destination 'platform=macOS' \
+  xcodebuild ${CONTAINER_ARGS[@]+"${CONTAINER_ARGS[@]}"} -scheme "$SCHEME" -destination "$dest" \
     -derivedDataPath "$DERIVED_DATA" -quiet "$action" 2>&1 | grep -E 'error:|FAILED|Test Case .* failed|Testing failed|Build failed' | head -80
   return "${PIPESTATUS[0]}"
+}
+
+note_platform() { # $1 list name (checked or failed_on), $2 platform: adds it once
+  local list="${!1}"
+  case " $list " in *" $2 "*) ;; *) printf -v "$1" '%s' "${list:+$list }$2" ;; esac
 }
 
 # ${PACKAGES[@]+...} keeps an empty list working under set -u in macOS bash 3.2.
@@ -67,8 +102,9 @@ for pkg in ${PACKAGES[@]+"${PACKAGES[@]}"}; do
     continue
   fi
   ran=$((ran + 1))
+  note_platform checked macOS
   swift test --package-path "$pkg" 2>&1 | tail -40
-  [ "${PIPESTATUS[0]}" -eq 0 ] || fail=1
+  [ "${PIPESTATUS[0]}" -eq 0 ] || { fail=1; note_platform failed_on macOS; }
 done
 
 if [ -n "$SCHEME" ]; then
@@ -76,14 +112,15 @@ if [ -n "$SCHEME" ]; then
     step "xcodebuild ($SCHEME)"
     printf 'xcodebuild not found: install Xcode or run xcode-select.\n'
     fail=1
-  elif [ "$MODE" = "full" ]; then
-    step "xcodebuild test ($SCHEME)"
-    ran=$((ran + 1))
-    run_xcodebuild test || fail=1
   else
-    step "xcodebuild build ($SCHEME)"
-    ran=$((ran + 1))
-    run_xcodebuild build || fail=1
+    action="build"
+    [ "$MODE" = "full" ] && action="test"
+    for platform in "${PLATFORMS[@]}"; do
+      step "xcodebuild $action ($SCHEME, $platform)"
+      ran=$((ran + 1))
+      note_platform checked "$platform"
+      run_xcodebuild "$action" "$platform" || { fail=1; note_platform failed_on "$platform"; }
+    done
   fi
 fi
 
@@ -104,12 +141,23 @@ fi
 [ -z "$skipped" ] || printf '\nskipped:%s\n' "$skipped"
 
 if [ "$fail" -ne 0 ]; then
-  printf '\nverify %s: FAIL\n' "$MODE"
+  printf '\nverify %s: FAIL%s\n' "$MODE" "${failed_on:+ (failed on: ${failed_on// /, })}"
   exit 1
 fi
 if [ "$ran" -eq 0 ]; then
   printf '\nverify %s: NOT CONFIGURED. No scheme and no package to check: set SCHEME or PACKAGES in scripts/verify.sh.\n' "$MODE"
   exit 2
 fi
-printf '\nverify %s: PASS (%s build/test check(s)%s)\n' "$MODE" "$ran" "$([ "$linted" -eq 0 ] || echo ' + SwiftLint')"
+unchecked=""
+for platform in ${PLATFORMS[@]+"${PLATFORMS[@]}"}; do
+  case " $checked " in *" $platform "*) ;; *) unchecked="${unchecked:+$unchecked, }$platform" ;; esac
+done
+if [ -n "$unchecked" ]; then
+  # Exit 0: nothing failed, and Claude cannot add the missing platform by itself.
+  printf '\nverify %s: PARTIAL (passed on %s; not checked on %s: no SCHEME builds it, and swift test runs on this Mac only)\n' \
+    "$MODE" "${checked// /, }" "$unchecked"
+  exit 0
+fi
+printf '\nverify %s: PASS (%s build/test check(s)%s; platforms: %s)\n' "$MODE" "$ran" \
+  "$([ "$linted" -eq 0 ] || echo ' + SwiftLint')" "${checked// /, }"
 exit 0
