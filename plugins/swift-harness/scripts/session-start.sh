@@ -31,6 +31,9 @@ if git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     # The snapshot baselines as they were at session start, for snapshot-watch.sh (#9).
     rm -f "$state/snapshots-warned" "$state/snapshots-approved"
     sh_snapshot_list "$(sh_snapshots)" >"$state/snapshots-start"
+    # The security settings as they are the first time, the baseline the user can approve (#32).
+    [ "$(sh_cfg '.security.enabled' 'true')" = "true" ] &&
+      "$(dirname "$0")/security.sh" --record --project "$SH_ROOT" >/dev/null 2>&1
     if [ -n "$fp" ] && [ "$fp" = "$(cat "$state/failed" 2>/dev/null)" ]; then
       echo "swift-harness: the last verification ('$verify_cmd') failed on the current code and has not passed since. Treat the project as not verified."
     fi

@@ -64,12 +64,13 @@ if ! jq -e 'type == "object"' "$SH_CONFIG" >/dev/null 2>&1; then
 fi
 
 unknown="$(jq -r '
-  (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify", "registry", "layout", "screenshots", "snapshots"])[],
+  (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify", "registry", "layout", "screenshots", "snapshots", "security"])[],
   (if (.verify | type) == "object" then (.verify | keys - ["enabled", "command", "maxAttempts", "inputs"])[] | "verify." + . else empty end),
   (if (.registry | type) == "object" then (.registry | keys - ["enabled", "path", "sources"])[] | "registry." + . else empty end),
   (if (.layout | type) == "object" then (.layout | keys - ["enabled", "path"])[] | "layout." + . else empty end),
   (if (.screenshots | type) == "object" then (.screenshots | keys - ["path"])[] | "screenshots." + . else empty end),
-  (if (.snapshots | type) == "object" then (.snapshots | keys - ["path"])[] | "snapshots." + . else empty end)
+  (if (.snapshots | type) == "object" then (.snapshots | keys - ["path"])[] | "snapshots." + . else empty end),
+  (if (.security | type) == "object" then (.security | keys - ["enabled"])[] | "security." + . else empty end)
 ' "$SH_CONFIG" | paste -sd, - | sed 's/,/, /g')"
 if [ -n "$unknown" ]; then
   row WARN "Config keys" "unknown, ignored by the hooks (typo?): $unknown"
@@ -110,6 +111,10 @@ problems="$(jq -r '
   (if (.snapshots | type) == "object" then
     check(["snapshots", "path"]; type == "string" and length > 0 and (startswith("/") | not) and (("/" + . + "/") | contains("/../") | not);
       "snapshots.path must be a folder inside the project")
+  else empty end),
+  check(["security"]; type == "object"; "security must be an object"),
+  (if (.security | type) == "object" then
+    check(["security", "enabled"]; type == "boolean"; "security.enabled must be true or false")
   else empty end)
 ' "$SH_CONFIG" | paste -sd ';' - | sed 's/;/; /g')"
 if [ -n "$problems" ]; then
@@ -303,6 +308,18 @@ if [ "$verify_enabled" = true ]; then
   else
     row FAIL "Verify approval" "'$command_line' is not approved (new, or it or a file it runs changed): the end-of-turn check does not run it. Fix: review it, then type /swift-harness:approve-verify"
   fi
+fi
+
+# ---------- security settings (#32) ----------
+
+if [ "$(sh_cfg '.security.enabled' 'true')" != true ]; then
+  row WARN "Security settings" "security.enabled is false: entitlements, ATS and signing settings changed by Claude are not reported"
+elif [ ! -f "$state/security-approved" ]; then
+  row INFO "Security settings" "no baseline yet: the next session start records the current entitlements, ATS and signing settings ($("$here/security.sh" state --project "$SH_ROOT" 2>/dev/null | grep -c .) setting(s)) for /swift-harness:approve-security"
+elif security_changes="$("$here/security.sh" check --project "$SH_ROOT" 2>/dev/null)"; then
+  row PASS "Security settings" "$(grep -c . "$state/security-approved") setting(s) unchanged since approval (entitlements, ATS, signing build settings)"
+else
+  row FAIL "Security settings" "changed since your approval, so the end-of-turn check fails: $(printf '%s\n' "$security_changes" | grep -E '^[+-] ' | head -5 | paste -sd';' - | sed 's/;/; /g'). Fix: revert what you did not intend, then type /swift-harness:approve-security"
 fi
 
 # ---------- project structure ----------

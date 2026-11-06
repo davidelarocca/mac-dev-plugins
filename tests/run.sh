@@ -2064,6 +2064,103 @@ out="$(doctor "$S")"
 expect_row "doctor: a baselines folder outside the project fails the config" "$out" FAIL Config 'snapshots.path must be a folder inside the project'
 expect_row "doctor: an unknown snapshots key warns" "$out" WARN 'Config keys' 'snapshots.pth'
 
+# ---------- security settings (#32) ----------
+
+sec() { CLAUDE_PLUGIN_DATA="$TMP/data" "$SCRIPTS/security.sh" "$@"; }
+sec_project() { # $1 name; an app with a sandboxed entitlements file, hardened runtime and an Info.plist
+  local p
+  p="$(new_project "$1")"
+  set_config "$p" '{"format":"none","lint":"none","verify":{"enabled":false,"maxAttempts":20}}'
+  mkdir -p "$p/App"
+  cat >"$p/App/App.entitlements" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+</dict>
+</plist>
+EOF
+  cat >"$p/App/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>App</string>
+</dict>
+</plist>
+EOF
+  printf '// !$*UTF8*$!\n{\n\t\t\t\tCODE_SIGN_ENTITLEMENTS = App/App.entitlements;\n\t\t\t\tENABLE_HARDENED_RUNTIME = YES;\n\t\t\t\tENABLE_HARDENED_RUNTIME = YES;\n\t\t\t\tPRODUCT_NAME = App;\n}\n' >"$p/App.xcodeproj/project.pbxproj"
+  git -C "$p" add -A && git -C "$p" commit -qm "app"
+  printf '%s' "$p"
+}
+entitle() { # $1 project, $2 plutil key, $3 value: add or change an entitlement
+  plutil -replace "$2" -bool "$3" "$1/App/App.entitlements"
+}
+
+P="$(sec_project security)"
+out="$(sec state --project "$P")"
+expect_result "security: entitlements are read key by key" 0 'App/App\.entitlements: com\.apple\.security\.app-sandbox = true' "exit=0
+$out"
+expect_result "security: signing build settings are read, with how many configurations set them" 0 'project\.pbxproj: ENABLE_HARDENED_RUNTIME = YES \(2 configurations\)' "exit=0
+$out" 'PRODUCT_NAME'
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+expect_result "security: an unchanged state passes the end-of-turn check" 0 '^exit=0' "$(rstop "$P")" 'Security settings'
+
+echo 'let app = 2' >"$P/Sources/App.swift"
+entitle "$P" 'com\.apple\.security\.cs\.disable-library-validation' YES
+out="$(rstop "$P")"
+expect_result "security: a hardened runtime exception blocks the turn, naming it" 2 '\+ App/App\.entitlements: com\.apple\.security\.cs\.disable-library-validation = true' "$out"
+expect_result "security: the block says only the user approves it" 2 'only they approve it.*/swift-harness:approve-security' "$out"
+expect_result "security: the check runs without the verify command approval" 2 'security settings' "$out"
+expect_row "doctor: changed security settings fail, with the change" "$(doctor "$P")" FAIL 'Security settings' 'disable-library-validation'
+
+git -C "$P" checkout -q -- App/App.entitlements
+plutil -remove 'com\.apple\.security\.app-sandbox' "$P/App/App.entitlements"
+expect_result "security: removing the sandbox blocks the turn" 2 '\- App/App\.entitlements: com\.apple\.security\.app-sandbox = true' "$(rstop "$P")"
+
+git -C "$P" checkout -q -- App/App.entitlements
+perl -0pi -e 's/ENABLE_HARDENED_RUNTIME = YES/ENABLE_HARDENED_RUNTIME = NO/' "$P/App.xcodeproj/project.pbxproj"
+expect_result "security: turning hardened runtime off in one configuration blocks the turn" 2 'ENABLE_HARDENED_RUNTIME = NO' "$(rstop "$P")"
+
+git -C "$P" checkout -q -- App.xcodeproj/project.pbxproj
+plutil -insert NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true}' "$P/App/Info.plist"
+expect_result "security: an ATS exception blocks the turn" 2 'App/Info\.plist: NSAppTransportSecurity\.NSAllowsArbitraryLoads = true' "$(rstop "$P")"
+
+out="$(sec --status --project "$P")"
+expect_result "security: status lists the change and a digest" 0 'NSAllowsArbitraryLoads = true.*Digest: [0-9a-f]{64}' "exit=0
+$(printf '%s' "$out" | tr '\n' ' ')"
+out2="$(sec --approve 0000 --project "$P" 2>&1)"
+expect_result "security: a wrong digest approves nothing" 1 'Nothing approved' "exit=$?
+$out2"
+expect_result "security: approving needs the plugin data folder" 1 'CLAUDE_PLUGIN_DATA is not set' "exit=1
+$(CLAUDE_PLUGIN_DATA='' "$SCRIPTS/security.sh" --status --project "$P" 2>&1)"
+d="$(printf '%s' "$out" | sed -n 's/^Digest: //p')"
+sec --approve "$d" --project "$P" >/dev/null
+echo 'let app = 3' >"$P/Sources/App.swift"
+expect_result "security: once approved, the same settings pass" 0 '^exit=0' "$(rstop "$P")" 'Security settings'
+expect_row "doctor: approved security settings pass" "$(doctor "$P")" PASS 'Security settings' 'unchanged since approval'
+
+entitle "$P" 'com\.apple\.security\.cs\.allow-jit' YES
+echo 'let app = 4' >"$P/Sources/App.swift"
+set_config "$P" '{"format":"none","lint":"none","verify":{"enabled":false,"maxAttempts":20},"security":{"enabled":false}}'
+expect_result "security: security.enabled false turns the check off" 0 '^exit=0' "$(rstop "$P")" 'Security settings'
+expect_row "doctor: security turned off is a warning" "$(doctor "$P")" WARN 'Security settings' 'security.enabled is false'
+set_config "$P" '{"security":{"enabled":"yes","x":1}}'
+out="$(doctor "$P")"
+expect_row "doctor: security.enabled must be a boolean" "$out" FAIL Config 'security.enabled must be true or false'
+expect_row "doctor: an unknown security key warns" "$out" WARN 'Config keys' 'security.x'
+
+P="$(sec_project security-new)"
+expect_row "doctor: before the first session, the baseline is not recorded yet" "$(doctor "$P")" INFO 'Security settings' 'no baseline yet'
+mkdir -p "$P/Helper"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>\n' >"$P/Helper/Helper.entitlements"
+expect_result "security: a new entitlements file is a change too" 2 'Helper/Helper\.entitlements: com\.apple\.security\.cs\.allow-unsigned-executable-memory = true' "$(rstop "$P")"
+
 # ---------- summary ----------
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
