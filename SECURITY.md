@@ -38,7 +38,7 @@ What the approval does **not** cover:
 
 **Upgrading from 1.1.x:** existing projects run no verification until you approve them once with `/swift-harness:approve-verify`. Claude is told at session start.
 
-**Protected paths are not a sandbox.** `protectedPaths` and the `project.pbxproj` guard ask for approval before the Edit, Write and MultiEdit tools change a file. A shell command run through Bash can still change those files. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`) and, for untrusted code, an isolated environment.
+**Protected paths are not a sandbox.** `protectedPaths` and the `project.pbxproj` guard ask for approval before the Edit, Write and MultiEdit tools change a file. A shell command run through Bash can still change those files; swift-harness reports such a change to protected paths at the end of the turn, after it happened. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`) and, for untrusted code, an isolated environment.
 
 **What the plugin's own scripts never do:** send data anywhere, install tools, or change files outside the project, except their own state in the plugin data folder.
 

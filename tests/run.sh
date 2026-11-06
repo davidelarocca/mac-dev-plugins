@@ -2204,6 +2204,53 @@ fi
 if grep -qF '// concurrency: <why it is safe>' "$PLUGIN/skills/setup/templates/rules/architecture.md"; then ok "concurrency: the architecture rule says what to try first and how to justify"
 else nok "concurrency: the architecture rule says what to try first and how to justify"; fi
 
+# ---------- protected paths changed outside Edit and Write (#11) ----------
+
+pwatch() { # $1 project
+  local out code
+  out="$(hook protected-watch.sh "$1" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+P="$(new_project protected-watch)"
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+expect_result "protected-watch: nothing changed says nothing" 0 '^exit=0$' "$(pwatch "$P")"
+echo 'let tool = 2' >"$P/Sources/AudioTools/Tool.swift"
+expect_result "protected-watch: a change outside the protected paths says nothing" 0 '^exit=0$' "$(pwatch "$P")"
+echo 'let engine = 2' >>"$P/Sources/Audio/Engine.swift"
+out="$(pwatch "$P")"
+expect_result "protected-watch: a protected file changed by a shell command is shown to the user" 0 'systemMessage.*without going through Edit or Write.*changed: Sources/Audio/Engine\.swift' "$out"
+expect_result "protected-watch: it never blocks" 0 '^exit=0' "$out"
+expect_result "protected-watch: the same change is shown once" 0 '^exit=0$' "$(pwatch "$P")"
+echo 'let mixer = 1' >"$P/Sources/Audio/Mixer.swift"
+rm "$P/Sources/Audio/Engine.swift"
+out="$(pwatch "$P")"
+expect_result "protected-watch: a new file in a protected folder is shown" 0 'changed: Sources/Audio/Mixer\.swift' "$out"
+expect_result "protected-watch: a deleted protected file is shown" 0 'deleted: Sources/Audio/Engine\.swift' "$out"
+
+P="$(new_project protected-edit)"
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let engine = 3' >"$P/Sources/Audio/Engine.swift"
+post_edit "$P" "$P/Sources/Audio/Engine.swift" >/dev/null
+expect_result "protected-watch: an edit through the guarded tools is not reported" 0 '^exit=0$' "$(pwatch "$P")"
+echo '// later, by sed' >>"$P/Sources/Audio/Engine.swift"
+expect_result "protected-watch: a shell change after a guarded edit is reported" 0 'changed: Sources/Audio/Engine\.swift' "$(pwatch "$P")"
+printf '<plist/>\n' >"$P/Info.plist"
+set_config "$P" '{"protectedPaths":["Info.plist"]}'
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+printf '<plist version="1.0"/>\n' >"$P/Info.plist"
+post_edit "$P" "$P/Info.plist" >/dev/null
+expect_result "protected-watch: a guarded edit of a non-Swift protected file is not reported" 0 '^exit=0$' "$(pwatch "$P")"
+
+P="$(new_project protected-nosession)"
+echo 'let engine = 4' >>"$P/Sources/Audio/Engine.swift"
+expect_result "protected-watch: without a session-start list it says nothing" 0 '^exit=0$' "$(pwatch "$P")"
+if jq -e '.hooks.Stop[0].hooks | map(.command) | any(test("protected-watch"))' "$PLUGIN/hooks/hooks.json" >/dev/null; then
+  ok "protected-watch: registered as a Stop hook"
+else nok "protected-watch: registered as a Stop hook"; fi
+
 # ---------- summary ----------
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
