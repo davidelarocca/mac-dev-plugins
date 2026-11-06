@@ -373,6 +373,7 @@ plugins/swift-harness/
   scripts/       hook scripts (bash + jq)
 tests/
   run.sh         hook and verify.sh tests (bash, git, jq; tools are faked)
+  ios-fixture.sh verify.sh and doctor on a macOS + iOS package with real Xcode (--full: on a simulator)
   smoke/         the same hooks inside real Claude Code sessions
   fixtures/      SwiftPM package that compiles the design-system references
 docs/assets/     logo, banner, demo (and the vhs tape that records it)
