@@ -2,21 +2,11 @@
 
 Where swift-harness is going, and why. Live status is in the [milestones](https://github.com/davidelarocca/swift-harness/milestones) and [issues](https://github.com/davidelarocca/swift-harness/issues). This page is updated with every release.
 
-_Last updated: 5 November 2026, after v1.1.3._
+_Last updated: 6 November 2026, after v1.2.0._
 
 **Guiding principle:** every check the harness claims to run must actually run, and must be backed by a test. New features come after the existing gates are reliable, and claims about impact come with measurements.
 
-## Now: v1.2.0, trust and onboarding
-
-Make it safe to install on any repository, and easy to set up.
-
-| | What you get | Issue |
-|---|---|---|
-| 🔐 | **Approve repository commands before they run.** The end-of-turn check runs only a command you have approved. Approvals are stored outside the repository and tied to the exact command and script, so a cloned repository cannot run its own code on your machine. | [#6](https://github.com/davidelarocca/swift-harness/issues/6) |
-| 🧹 | **Re-verify after plugin updates.** Code that passed under older rules is checked again once the plugin's checks change. | [#18](https://github.com/davidelarocca/swift-harness/issues/18) |
-| 🩺 | **`/swift-harness:doctor`.** One read-only command that lists what is set up and what is missing, with one fix per line: tools, configuration, placeholders, formatter config, project structure. | [#12](https://github.com/davidelarocca/swift-harness/issues/12) |
-
-## Next: v1.3.0, architecture you can enforce
+## Now: v1.3.0, architecture you can enforce
 
 Turn the architecture written in your docs into checks.
 
@@ -39,6 +29,7 @@ Turn the architecture written in your docs into checks.
 
 | Version | Highlights |
 |---|---|
+| [1.2.0](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.2.0) | Trust and onboarding: the repository's verify command runs only after you approve it (`/swift-harness:approve-verify`), `/swift-harness:doctor` diagnoses the setup, and results are tied to the plugin version so an update re-verifies once. |
 | [1.1.3](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.1.3) | Strict lint means strict: with `lintBlocking`, a missing SwiftLint fails the end-of-turn check instead of passing unlinted code. |
 | [1.1.2](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.1.2) | Verification fixes from an external review: lint alone never passes `verify.sh full`, design-system colors checked at runtime, blocking plugin validation. |
 | [1.1.1](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.1.1) | Repository and marketplace renamed to swift-harness. Public roadmap, security policy, contribution guide, demo. |

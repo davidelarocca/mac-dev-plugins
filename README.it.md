@@ -180,7 +180,7 @@ La tabella completa delle opzioni è nel [README in inglese](README.md#configura
 
 ## Roadmap
 
-Prossima tappa: **v1.2.0, fiducia e onboarding.** I comandi della repo girano solo dopo la tua approvazione, e `/swift-harness:doctor` diagnostica la configurazione. Poi: contratti architetturali per i progetti SwiftPM e un registro dei componenti verificato. Tutto nella [roadmap](ROADMAP.md).
+Prossima tappa: **v1.3.0, un'architettura che si può far rispettare.** Contratti architetturali per i progetti SwiftPM, un registro dei componenti verificato e un test in sessione reale che Claude riusi un componente esistente invece di crearne un secondo. Tutto nella [roadmap](ROADMAP.md).
 
 ## Limiti
 
