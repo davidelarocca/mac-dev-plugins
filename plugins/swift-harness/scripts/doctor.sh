@@ -64,10 +64,11 @@ if ! jq -e 'type == "object"' "$SH_CONFIG" >/dev/null 2>&1; then
 fi
 
 unknown="$(jq -r '
-  (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify", "registry", "layout"])[],
+  (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify", "registry", "layout", "screenshots"])[],
   (if (.verify | type) == "object" then (.verify | keys - ["enabled", "command", "maxAttempts", "inputs"])[] | "verify." + . else empty end),
   (if (.registry | type) == "object" then (.registry | keys - ["enabled", "path", "sources"])[] | "registry." + . else empty end),
-  (if (.layout | type) == "object" then (.layout | keys - ["enabled", "path"])[] | "layout." + . else empty end)
+  (if (.layout | type) == "object" then (.layout | keys - ["enabled", "path"])[] | "layout." + . else empty end),
+  (if (.screenshots | type) == "object" then (.screenshots | keys - ["path"])[] | "screenshots." + . else empty end)
 ' "$SH_CONFIG" | paste -sd, - | sed 's/,/, /g')"
 if [ -n "$unknown" ]; then
   row WARN "Config keys" "unknown, ignored by the hooks (typo?): $unknown"
@@ -99,6 +100,10 @@ problems="$(jq -r '
   (if (.layout | type) == "object" then
     check(["layout", "enabled"]; type == "boolean"; "layout.enabled must be true or false"),
     check(["layout", "path"]; type == "string" and length > 0; "layout.path must be a path")
+  else empty end),
+  check(["screenshots"]; type == "object"; "screenshots must be an object"),
+  (if (.screenshots | type) == "object" then
+    check(["screenshots", "path"]; type == "string" and length > 0; "screenshots.path must be a path")
   else empty end)
 ' "$SH_CONFIG" | paste -sd ';' - | sed 's/;/; /g')"
 if [ -n "$problems" ]; then

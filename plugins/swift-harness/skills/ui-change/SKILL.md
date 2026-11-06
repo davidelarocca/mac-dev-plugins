@@ -43,7 +43,7 @@ For an entity shown in a new place, the default is the whole: it opens its desti
 - Previews for every state of the component: default, hover or pressed where relevant, disabled, selected, light and dark, long and localized text.
 - Snapshot tests for shared components when the project has snapshot testing set up. Re-record only intentional changes and mention it.
 - For a screen in the layout contract: previews at its Min and Default sizes, and its `LayoutContract.check` tests pass (they run in the verify command). A failure gives the size and the width needed: fix the layout, or change the contract only when the user agrees the screen's sizes change.
-- Build. For non-trivial changes, delegate a review to the `ui-reviewer` agent with the list of changed files.
+- Build. For non-trivial changes, delegate a review to the `ui-reviewer` agent with the list of changed files. When the project has `Screenshot.capture` tests, run them first so the images show the change (`scripts/verify.sh fast` covers a package test target, `full` an Xcode one); for a new main screen, add its capture next to its layout test.
 - If the component is used in several places, check each caller listed in the registry.
 
 ## 5. Record

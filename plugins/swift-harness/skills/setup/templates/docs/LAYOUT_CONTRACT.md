@@ -16,7 +16,8 @@ Sizes are in points, `<width>x<height>`, or `<width>` alone when the height does
   - Measure the content without the window's frame: a minimum or fixed frame around a view hides content
     wider than the frame.
 - Not measured: truncated text, overlapping content, and where popovers and secondary windows open. Those are
-  checked in review, against the rows below.
+  checked in review, against the rows below. `Screenshot.capture("<View>") { ... }` in the same tests saves
+  images of the screen at Min and Default for that review.
 
 ## Screens
 
