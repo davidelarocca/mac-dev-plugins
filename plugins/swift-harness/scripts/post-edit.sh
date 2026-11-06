@@ -103,6 +103,22 @@ $SH_LINT_OUTPUT}"
   fi
 fi
 
+# ---- Architecture contracts (#13) ----
+# An edited manifest is checked at once. dump-package runs Package.swift, so only with the
+# approved verify command, like the end-of-turn check.
+if [ "${rel##*/}" = "Package.swift" ] && [ -f "$SH_ROOT/$SH_CONTRACT" ] &&
+  [ "$(sh_cfg '.verify.enabled' 'true')" = "true" ] &&
+  sh_verify_approved "$(sh_cfg '.verify.command' 'scripts/verify.sh fast')" "$(sh_state_dir)"; then
+  if ! contract_out="$("$(dirname "$0")/contracts.sh" "$SH_ROOT" 2>&1)"; then
+    printf '%s%s\n\nThe edit is applied, but the end-of-turn check will fail until the package matches the contract.\n' \
+      "${notes:+$notes
+
+}" "$contract_out" >&2
+    exit 2
+  fi
+  [ -z "$contract_out" ] || add_note "$contract_out"
+fi
+
 [ -n "$notes" ] || exit 0
 
 jq -n --arg ctx "$notes" '{

@@ -74,14 +74,24 @@ Rules for filling templates:
 - Run `scripts/verify.sh fast` once. Report the result. If it fails for reasons unrelated to setup, record that in the summary instead of fixing it now.
 - Run SwiftLint once on the whole project and report the count per custom rule. This is the baseline of hardcoded values to migrate. If the count is high, suggest `swiftlint lint --write-baseline .swiftlint-baseline.json` and adding `--baseline .swiftlint-baseline.json` in `verify.sh`, so only new violations count.
 
-## 6. Companion plugins
+## 6. Architecture contracts (SwiftPM, optional)
+
+Only when the code is split into SwiftPM packages with several targets. Offer to create `docs/architecture-contracts.json`, which makes the end-of-turn check fail when a target gains a dependency the contract does not allow:
+
+1. Read the current graph with `swift package dump-package` in each package folder (it runs `Package.swift`: ask before running it in a project you have not built).
+2. Propose one entry per non-test target, listing its current dependencies: local targets by name, products of other packages as `package/product`. Point out any dependency that looks like a boundary violation instead of copying it silently.
+3. Write the file only after the user agrees, with `"version": 1` and package folders as keys (`"."` for the root package). Suggest adding it to `protectedPaths` so Claude asks before editing it.
+
+Skip this step for Xcode-only projects or a single target: there is nothing to check.
+
+## 7. Companion plugins
 
 Check `/plugin` state and recommend, without installing on your own:
 
 - `swift-lsp@claude-plugins-official`: type diagnostics and code navigation after edits. Recommended for every Swift project.
 - Optional: XcodeBuildMCP for build/run/test loops without Xcode open, or the Xcode 26.3+ MCP (`xcrun mcpbridge`) for RenderPreview. Suggest at most one to start.
 
-## 7. Finish
+## 8. Finish
 
 1. Show the list of created and merged files.
 2. Commit on the setup branch with message `chore: set up swift-harness` only after the user confirms.
