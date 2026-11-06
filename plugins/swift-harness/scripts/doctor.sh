@@ -65,7 +65,7 @@ fi
 
 unknown="$(jq -r '
   (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify"])[],
-  (if (.verify | type) == "object" then (.verify | keys - ["enabled", "command", "maxAttempts"])[] | "verify." + . else empty end)
+  (if (.verify | type) == "object" then (.verify | keys - ["enabled", "command", "maxAttempts", "inputs"])[] | "verify." + . else empty end)
 ' "$SH_CONFIG" | paste -sd, - | sed 's/,/, /g')"
 if [ -n "$unknown" ]; then
   row WARN "Config keys" "unknown, ignored by the hooks (typo?): $unknown"
@@ -84,7 +84,8 @@ problems="$(jq -r '
   (if (.verify | type) == "object" then
     check(["verify", "enabled"]; type == "boolean"; "verify.enabled must be true or false"),
     check(["verify", "command"]; type == "string" and length > 0; "verify.command must be a non-empty string"),
-    check(["verify", "maxAttempts"]; type == "number" and . >= 1 and floor == .; "verify.maxAttempts must be a whole number, 1 or more")
+    check(["verify", "maxAttempts"]; type == "number" and . >= 1 and floor == .; "verify.maxAttempts must be a whole number, 1 or more"),
+    check(["verify", "inputs"]; type == "array" and all(.[]; type == "string"); "verify.inputs must be a list of paths")
   else empty end)
 ' "$SH_CONFIG" | paste -sd ';' - | sed 's/;/; /g')"
 if [ -n "$problems" ]; then

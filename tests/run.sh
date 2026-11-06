@@ -581,6 +581,46 @@ out="$(PATH="$PEFAKES:$PATH" FAKE_TOOL_LOG="$TOOLLOG" FAKE_LINT=clean appr_stop 
 if [ "$(appr_runs)" = 2 ]; then ok "approval: an unverified stop is not recorded as passed"
 else nok "approval: an unverified stop is not recorded as passed" "runs=$(appr_runs) $out"; fi
 
+# SH120-01: the command line is split on spaces, not parsed as shell. A quoted path with a
+# space was not covered, and the approval looked complete.
+P="$(new_project approval-quoted)"
+printf '#!/bin/bash\necho run >>"${FAKE_VERIFY_LOG:-/dev/null}"\n' >"$P/scripts/my verify.sh"
+chmod +x "$P/scripts/my verify.sh"
+set_config "$P" '{"verify":{"command":"bash \"scripts/my verify.sh\" fast"}}'
+git -C "$P" add -A && git -C "$P" commit -qm quoted
+out="$(approval "$P" --status)"
+if grep -q '^Warning:.*quotes or shell syntax.*verify\.inputs' <<<"$out"; then ok "approval: a command with quotes says its files may not be covered"
+else nok "approval: a command with quotes says its files may not be covered" "$out"; fi
+if ! grep -q '^Warning' <<<"$(approval "$(new_project approval-plain)" --status)"; then ok "approval: a plain command has no warning"
+else nok "approval: a plain command has no warning" "$(approval "$TMP/approval-plain" --status)"; fi
+
+set_config "$P" '{"verify":{"command":"bash \"scripts/my verify.sh\" fast","inputs":["scripts/my verify.sh"]}}'
+out="$(approval "$P" --status)"
+if grep -q '^Input: scripts/my verify.sh (sha256 [0-9a-f]*)' <<<"$out"; then ok "approval: verify.inputs files are listed with their hash"
+else nok "approval: verify.inputs files are listed with their hash" "$out"; fi
+approve "$P" >/dev/null
+echo 'echo changed' >>"$P/scripts/my verify.sh"
+if grep -q '^Status: not approved' <<<"$(approval "$P" --status)"; then ok "approval: a changed file in verify.inputs needs a new approval"
+else nok "approval: a changed file in verify.inputs needs a new approval" "$(approval "$P" --status)"; fi
+
+set_config "$P" '{"verify":{"command":"bash \"scripts/my verify.sh\" fast","inputs":["scripts"]}}'
+approve "$P" >/dev/null
+echo 'echo helper' >"$P/scripts/helper.sh"
+if grep -q '^Status: not approved' <<<"$(approval "$P" --status)"; then ok "approval: a new file in a verify.inputs folder needs a new approval"
+else nok "approval: a new file in a verify.inputs folder needs a new approval" "$(approval "$P" --status)"; fi
+
+set_config "$P" '{"verify":{"command":"scripts/verify.sh fast","inputs":["scripts/later.sh"]}}'
+out="$(approval "$P" --status)"
+if grep -q '^Input: scripts/later.sh (missing' <<<"$out"; then ok "approval: a missing verify.inputs file is shown as missing"
+else nok "approval: a missing verify.inputs file is shown as missing" "$out"; fi
+approve "$P" >/dev/null
+echo 'echo later' >"$P/scripts/later.sh"
+if grep -q '^Status: not approved' <<<"$(approval "$P" --status)"; then ok "approval: a verify.inputs file that appears needs a new approval"
+else nok "approval: a verify.inputs file that appears needs a new approval" "$(approval "$P" --status)"; fi
+set_config "$P" '{"verify":{"command":"scripts/verify.sh fast","inputs":["../outside.sh"]}}'
+if grep -q '^Input: \.\./outside.sh (outside the project' <<<"$(approval "$P" --status)"; then ok "approval: a verify.inputs path outside the project is refused"
+else nok "approval: a verify.inputs path outside the project is refused" "$(approval "$P" --status)"; fi
+
 # ---------- doctor.sh (#12) ----------
 
 doctor() { # $1 project; prints "exit=<code>" then the report
@@ -765,11 +805,17 @@ else
   nok "setup: swift-format template uses 4 spaces and 160 columns like the swiftformat template"
 fi
 
+P="$(new_project doctor-inputs)"
+set_config "$P" '{"verify":{"command":"scripts/verify.sh fast","inputs":"scripts"}}'
+expect_row "doctor: verify.inputs that is not a list fails" "$(doctor "$P")" FAIL 'Config' 'verify\.inputs must be a list'
+set_config "$P" '{"verify":{"command":"scripts/verify.sh fast","inputs":["scripts"]}}'
+expect_row "doctor: verify.inputs is a known key" "$(doctor "$P")" PASS 'Config keys' 'all known'
+
 # ---------- verify.sh template ----------
 
 FAKES="$TMP/fakes"
 mkdir -p "$FAKES"
-printf '#!/bin/bash\nexit "${FAKE_XCODEBUILD_EXIT:-0}"\n' >"$FAKES/xcodebuild"
+printf '#!/bin/bash\n[ -z "${FAKE_XCODEBUILD_ARGS:-}" ] || printf "%%s\\n" "$@" >>"$FAKE_XCODEBUILD_ARGS"\nexit "${FAKE_XCODEBUILD_EXIT:-0}"\n' >"$FAKES/xcodebuild"
 printf '#!/bin/bash\nexit "${FAKE_SWIFT_EXIT:-0}"\n' >"$FAKES/swift"
 printf '#!/bin/bash\nexit "${FAKE_SWIFTLINT_EXIT:-0}"\n' >"$FAKES/swiftlint"
 chmod +x "$FAKES/xcodebuild" "$FAKES/swift" "$FAKES/swiftlint"
@@ -820,6 +866,19 @@ expect_verify "verify.sh: existing package with passing tests passes" 0 'verify 
 
 V="$(verify_project build-fails '-project App.xcodeproj' App '')"
 expect_verify "verify.sh: failing build fails" 1 'verify fast: FAIL' "$(FAKE_XCODEBUILD_EXIT=65 run_verify "$V")"
+
+# SH120-05: a project name with spaces must reach xcodebuild as one argument.
+V="$(verify_project spaced '-project My App.xcodeproj' App '')"
+: >"$TMP/xcodebuild-args"
+FAKE_XCODEBUILD_ARGS="$TMP/xcodebuild-args" run_verify "$V" full >/dev/null
+if grep -qx 'My App.xcodeproj' "$TMP/xcodebuild-args" && grep -qx -- '-project' "$TMP/xcodebuild-args"; then
+  ok "verify.sh: a project path with spaces is passed as one argument"
+else nok "verify.sh: a project path with spaces is passed as one argument" "$(cat "$TMP/xcodebuild-args")"; fi
+V="$(verify_project workspace '-workspace App.xcworkspace' App '')"
+: >"$TMP/xcodebuild-args"
+FAKE_XCODEBUILD_ARGS="$TMP/xcodebuild-args" run_verify "$V" >/dev/null
+if [ "$(head -2 "$TMP/xcodebuild-args" | paste -sd' ' -)" = "-workspace App.xcworkspace" ]; then ok "verify.sh: the container flag and path come first"
+else nok "verify.sh: the container flag and path come first" "$(cat "$TMP/xcodebuild-args")"; fi
 
 V="$(verify_project bad-mode '-project App.xcodeproj' App '')"
 expect_verify "verify.sh: unknown mode is rejected" 1 'fsat' "$(run_verify "$V" fsat)"

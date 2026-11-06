@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased
+## swift-harness 1.2.1 (2026-11-06)
 
+Fixes from an external audit of 1.2.0. No configuration changes needed.
+
+- **Approval coverage** (SH120-01): the verify command is split on spaces, not parsed as shell, so a script named in quotes (`bash "scripts/my verify.sh" fast`) was not covered by the approval, and the status did not say so: editing that script left the command approved. Now `/swift-harness:approve-verify` warns when the command has quotes or shell syntax, and the new `verify.inputs` lists files or folders the approval covers whatever the command looks like. A missing input is shown as missing, and approving again is needed once it appears; a path outside the project is refused. Existing approvals stay valid unless you add `verify.inputs`.
+- **Xcode projects with spaces in the name** (SH120-05): the generated `scripts/verify.sh` passed `-project My App.xcodeproj` to xcodebuild as three words. It now keeps the path as one argument. Already generated scripts do not update on their own: copy the `CONTAINER_ARGS` lines from the template, or run `/swift-harness:setup` again.
+- **Docs** (SH120-02): 1.2.0 said that unchanged code is verified again once after a plugin update. It is not: the old result stops counting, and the check runs at the end of the next turn that changes build inputs. `/swift-harness:doctor` shows the code as not verified until then. README fixed.
+- `/swift-harness:doctor` knows `verify.inputs` and checks that it is a list of paths.
 - Smoke suite: a `reuse` group of 6 scenarios for the problem swift-harness exists for, a second copy of an existing UI component ([#19](https://github.com/davidelarocca/swift-harness/issues/19)). The app has a shared pill presenter; Claude is asked for a confirmation on another screen, then for one with an Undo action the pill does not support. Each scenario also runs without the plugin as a baseline. Result: with this model and this small app, Claude reused or extended the pill in every run, with and without swift-harness. The differences were in the registry, previews, tests and cost, recorded in `tests/smoke/RESULTS.md`. Run with `tests/smoke/run.sh reuse`; not part of the default run.
 
 ## swift-harness 1.2.0 (2026-11-06)
