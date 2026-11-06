@@ -58,7 +58,7 @@ status() {
         IFS=$'\t' read -r _ path sha <<<"$line"
         case "$sha" in
           missing) printf 'Input: %s (missing: approving again is needed once it exists)\n' "$path" ;;
-          outside) printf 'Input: %s (outside the project: not covered)\n' "$path" ;;
+          outside) printf 'Input: %s (outside the project, or links outside it: cannot be covered, so approval is refused. Remove it from verify.inputs)\n' "$path" ;;
           *) printf 'Input: %s (sha256 %s)\n' "$path" "$sha" ;;
         esac
         ;;
@@ -69,7 +69,9 @@ status() {
   fi
   [ "$(sh_cfg '.verify.enabled' 'true')" = "true" ] ||
     echo "Note: verify.enabled is false, so the Stop hook does not run this command."
-  if sh_verify_approved "$command_line" "$state"; then
+  if sh_verify_approved "$command_line" "$state" && sh_verify_partial "$command_line"; then
+    echo "Status: approved, partial coverage (the files the command runs may change without a new approval; list them in verify.inputs)"
+  elif sh_verify_approved "$command_line" "$state"; then
     echo "Status: approved"
   else
     echo "Status: not approved"
@@ -86,6 +88,11 @@ case "$action" in
   --approve)
     if [ "$digest" != "$(sh_verify_digest "$command_line")" ]; then
       echo "swift-harness: the verify command or its files changed since they were shown. Nothing approved; check the status again."
+      status
+      exit 1
+    fi
+    if sh_verify_manifest "$command_line" | grep -q $'^input\t.*\toutside$'; then
+      echo "swift-harness: verify.inputs lists a path outside the project (or a folder with links outside it), which an approval cannot cover. Nothing approved; remove it from verify.inputs in .claude/swift-harness.json."
       status
       exit 1
     fi
