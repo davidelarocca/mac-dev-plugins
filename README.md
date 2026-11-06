@@ -162,7 +162,7 @@ They start as warnings, which double as the migration to-do list. Switch a rule 
 
 A quality tool has to be checked itself. Every release goes through:
 
-- **254 automated checks** of the hooks, templates and skills (`tests/run.sh`), run in CI with macOS `/bin/bash` 3.2, plus ShellCheck and a build of the Swift reference files.
+- **273 automated checks** of the hooks, templates and skills (`tests/run.sh`), run in CI with macOS `/bin/bash` 3.2, plus ShellCheck and a build of the Swift reference files.
 - **A smoke test in real Claude Code sessions** (`tests/smoke/`): 16 scenarios for the hooks, 6 for reusing UI components and 3 for product coherence (4 of them baselines without the plugin), with their invariants checked automatically. Latest full run of the hook scenarios: 62/62 invariants passed ([results](tests/smoke/RESULTS.md)).
 
 What Claude did in those sessions:
