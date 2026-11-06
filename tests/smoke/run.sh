@@ -984,6 +984,7 @@ added_lines() {
 # tests ran, the images are in .build/swift-harness/screenshots. "code": the same screens, no
 # capture tests, no images. The plugin is on in both arms; only the images differ. Claude's
 # findings are matched loosely and printed: read them before counting a defect as found.
+# shellcheck disable=SC2034 # read by the scenario functions defined with eval below
 VISUAL_TASK='Use the ui-reviewer agent to review the two screens in Sources/Screens (ArtistsView.swift and AlbumsView.swift) for visual consistency. Pass it the two files. Report its findings as it gives them. Do not edit any file.'
 visual_fixture() { # $1 shots|code
   rm -rf Package.swift Sources Tests docs
