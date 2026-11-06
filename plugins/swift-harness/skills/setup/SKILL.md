@@ -58,6 +58,7 @@ For each template, if the target file does not exist, create it with placeholder
 | `tests/LayoutContract.swift` | a test target that can import SwiftUI and the screens, without a sandboxed host app (see step 7) |
 | `tests/Screenshot.swift` | the same test target as `LayoutContract.swift` (see step 7) |
 | `tests/Snapshot.swift` | the same test target as `LayoutContract.swift` (see step 7) |
+| `tests/AccessibilityAudit.swift` | a UI test target (XCUITest) of the app (see step 7, accessibility) |
 | `docs/adr/0000-template.md` | `docs/adr/0000-template.md` |
 | `swiftlint.yml` | `.swiftlint.yml` |
 | `swiftformat` | `.swiftformat` (only if swiftformat was chosen) |
@@ -106,6 +107,8 @@ Offer it when the app has windows the user resizes. Fill `docs/LAYOUT_CONTRACT.m
 
 Skip items 1-6 for apps without resizable windows; item 7 applies to any app with shared components (it needs `LayoutContract.swift` and `Screenshot.swift` in the test target, not a contract). It can be done later by asking for a layout contract or snapshot tests.
 
+
+**Accessibility audit (any app with a UI test target, macOS 14 or iOS 17 and later).** Offer it: copy `tests/AccessibilityAudit.swift` into the app's UI test target and add one test per main screen that launches the app, opens the screen and calls `try AccessibilityAudit.check(app)`. It runs Apple's `performAccessibilityAudit()`: missing descriptions, contrast, hit areas, clipped text, traits. Without a UI test target, propose creating one in Xcode and let the user do it (a new target edits `project.pbxproj`). Run it once: list the issues found. Each one is fixed or, with the user's agreement, listed as an exception in that test with its reason, never silenced for the whole app. UI tests run in `scripts/verify.sh full`.
 ## 8. Companion plugins
 
 Check `/plugin` state and recommend, without installing on your own:
