@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## swift-harness 1.4.1 (2026-11-06)
+
+A fix from the real-app check of the layout contract.
 
 - Fixed: the layout contract passed screens it could not measure ([#34](https://github.com/davidelarocca/swift-harness/issues/34), found on a real app). `NavigationSplitView`, `HSplitView`, `List`, `Table` and `.frame(minWidth: 0, maxWidth: .infinity)` take any width they are offered, so `sizeThatFits` never sees what they clip: an element 2000 pt wide in a split view's detail column measured 900 pt in a 900 pt window. On a copy of a ~97k-line app, both main screens (a split view and an equalizer panel) passed this way. `LayoutContract.check` now tells three cases apart. Content that takes any width and asks for none (split views, lists, tables) fails with "its width cannot be measured" and what to do: one row per page of the detail column and for the sidebar, at the width their column gets, and the window type as View for the split view's row; its height is still measured. Content that takes any width but has one of its own (text that wraps, or a stretched frame, which cannot be told apart) passes with a note on the test output. On that app the split view now fails with the fix and the panel gets the note. The window checks were right on that app and are unchanged. `setup`, the contract template and the README explain it. **Existing projects:** a row whose View is a split view or a `List` now fails with that message; follow it, or name the window type as View.
 
