@@ -96,6 +96,20 @@ jobs:
         working-directory: tests/fixtures/layout
         run: swift test
 
+      # The Screenshot helper (linked into the fixture) renders the fixture screens in an
+      # offscreen window and saves PNG images for review; a blank capture fails the test.
+      - name: Screenshot helper captures the fixture screens
+        working-directory: tests/fixtures/visual
+        run: swift test
+
+      - name: Upload the captured screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-fixture-screenshots
+          path: tests/fixtures/visual/.build/swift-harness/screenshots/
+          if-no-files-found: warn
+
       - name: swift-format template is accepted
         run: |
           tmp="$(mktemp -d)"

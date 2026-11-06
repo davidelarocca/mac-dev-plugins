@@ -154,7 +154,24 @@ Claude builds a screen at the size of its preview. `docs/LAYOUT_CONTRACT.md` giv
 - At the end of each turn, `scripts/layout.sh` checks the contract itself: every View exists in its File, every Window is declared, every one is measured by a test, sizes are sizes. It reads Markdown and Swift files as text, so it runs without the verify approval.
 - After Claude edits a file that draws a screen in the contract, a note gives its sizes. `ui-change`, the UI rule and `ui-reviewer` read the contract; the reviewer checks what the tests cannot see.
 
-The content is measured without the window's frame: a `.frame(minWidth:)` around a view hides content wider than the frame, so the window's minimum belongs to a small window view, measured on its own. Not measured: truncated text, overlaps, and where popovers open; those are review checks, and screenshot review comes next ([#35](https://github.com/davidelarocca/swift-harness/issues/35)).
+The content is measured without the window's frame: a `.frame(minWidth:)` around a view hides content wider than the frame, so the window's minimum belongs to a small window view, measured on its own. Not measured: truncated text, overlaps, and where popovers open; those are review checks, on screenshots when the project captures them (below).
+
+</details>
+
+<details>
+<summary><b>Design review on screenshots</b></summary>
+
+Code shows tokens and modifiers, not whether rows line up or two screens look alike. The project's tests can save images of each screen for the `ui-reviewer` agent:
+
+```swift
+#expect(Screenshot.capture("LibraryView") { LibraryView() } == [])
+```
+
+- `Screenshot.capture` (copied by setup next to `LayoutContract.swift`, from `templates/tests/Screenshot.swift`) renders the screen in an offscreen window at the Min and Default sizes of its layout contract row, or at sizes you pass, in light and dark, and saves PNG images with a `.json` beside each (screen, state, platform, size, scale, OS, source file) to `.build/swift-harness/screenshots/`. It runs in `scripts/verify.sh` like any test, so the images follow the code. A blank capture is reported as a problem.
+- `ui-reviewer` opens the images of the changed screens and of screens next to them, and reports what it sees: edges that do not line up, spacing that differs between screens built the same way, hierarchy, truncation, dark-mode contrast. Each finding names the image and the `file:line` that draws it. These are review notes, not a gate: nothing is compared with a baseline (that is [#9](https://github.com/davidelarocca/swift-harness/issues/9)).
+- Why a window: `ImageRenderer` draws a placeholder for `List` and other AppKit-backed controls, and `NSView.cacheDisplay` drops SwiftUI text. The window server capture shows the screen as the app draws it.
+
+Measured on a small fixture, 3 runs per arm ([results](tests/smoke/RESULTS.md)): the defects planted in the code were found with and without images; with images the reviewer gave positions instead of guesses, never misdescribed the layout, and found a rendering defect the code-only review missed every time.
 
 </details>
 
@@ -265,6 +282,7 @@ On Claude Code 2.1.275 or later, the first two lines can be one: `/plugin instal
 | `registry.sources` | design system folders where views, modifiers and styles missing from the registry are looked for | `[]` |
 | `layout.enabled` | check the layout contract at the end of the turn, when the file exists | `true` |
 | `layout.path` | the layout contract, relative to the repo root; `LayoutContract.check` reads it from the same config | `docs/LAYOUT_CONTRACT.md` |
+| `screenshots.path` | where `Screenshot.capture` saves images and `ui-reviewer` looks for them, relative to the repo root | `.build/swift-harness/screenshots` |
 
 With `swift-format`, keep a `.swift-format` file in the repository root (setup creates one). Without it, swift-format applies its defaults, including 2-space indentation, to every file Claude edits, and SessionStart warns about it.
 
@@ -308,6 +326,7 @@ Next up: **v1.4.0, visual coherence.** Window behavior at every size, a design r
 - **The verify approval covers what the command names, not everything it reads.** The command is split on spaces, not parsed as shell: with quotes or shell syntax and no `verify.inputs`, the approval shows as `approved, partial coverage` (also in `/swift-harness:doctor`), and listing the scripts in `verify.inputs` covers them. An input outside the project, or a folder with a link that leads outside it, cannot be covered, so the approval is refused. A `Makefile` behind `make verify`, or a script that `verify.sh` sources, can change without a new approval. Approving also means trusting the project's build (Xcode Run Script phases, SwiftPM manifests and plugins). See [SECURITY.md](SECURITY.md).
 - **The registry check is about entries, not reuse.** It proves each entry points to a real declaration and finds unlisted views, modifiers, layouts and styles in `registry.sources`. It does not decide whether a new view duplicates an existing one. Editing only the registry also re-runs the fast verification at the end of the turn, since the registry is part of the checked state.
 - **The layout contract measures room, not looks.** It proves a screen does not need more space than its window gives at each size, and that the window declares its sizes. Text that truncates, content that overlaps and popovers that open outside the window are left to review. The measuring tests cannot run in a test target hosted by a sandboxed app, which cannot read `docs/`: use a package or unhosted test target, or pass `contract:`. macOS only for now; iOS size classes come with [#40](https://github.com/davidelarocca/swift-harness/issues/40).
+- **Screenshot review is a judgment, not a check.** The images are evidence for the reviewer; a misaligned row does not fail anything. Capturing needs a logged-in session with a window server (Xcode, `swift test`, GitHub macOS runners) and a test target that can write to the project: a sandboxed host app cannot, so use a package or unhosted test target, or pass `output:`. Images depend on the macOS version and display scale. macOS only for now.
 - **Architecture contracts cover SwiftPM targets only.** Dependencies between Xcode targets, and imports that the build allows through a transitive dependency, are not checked.
 - **The protected-path guard is not a sandbox.** It covers the Edit, Write and MultiEdit tools only; a shell command run through Bash can still change a protected file. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`).
 - The Swift reference files in the `design-system` skill are examples to adapt, not a library.
