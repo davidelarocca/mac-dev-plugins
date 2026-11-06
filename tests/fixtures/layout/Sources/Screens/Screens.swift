@@ -72,3 +72,34 @@ public struct BoundedWindow: View {
             .frame(minWidth: 480, maxWidth: 1200, minHeight: 300, maxHeight: 900)
     }
 }
+
+/// The library in a split view, as most Mac apps show their main window. A split view takes any
+/// width it is offered, so the overflow of LibraryView in its detail column cannot be measured
+/// here: the check says so instead of passing. LibraryView is measured on its own row.
+public struct SplitLibraryView: View {
+    public init() {}
+    public var body: some View {
+        NavigationSplitView {
+            List(["Library", "Shared"], id: \.self) { Text($0) }
+        } detail: {
+            LibraryView()
+        }
+    }
+}
+
+/// The split library's window: its minimum is the contract's Min.
+public struct SplitLibraryWindow: View {
+    public init() {}
+    public var body: some View {
+        SplitLibraryView().frame(minWidth: 640, minHeight: 400)
+    }
+}
+
+/// Content in a frame from zero to infinity takes any width too, and is not detected: it looks
+/// like text that wraps.
+public struct StretchedLibraryView: View {
+    public init() {}
+    public var body: some View {
+        LibraryView().frame(minWidth: 0, maxWidth: .infinity)
+    }
+}

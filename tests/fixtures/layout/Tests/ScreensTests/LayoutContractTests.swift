@@ -17,6 +17,56 @@ struct LayoutContractTests {
         #expect(LayoutContract.check("LibraryWindow") { LibraryWindow() } == [])
     }
 
+    // A split view takes any width: the overflow in its detail column cannot be seen, and the
+    // check says so instead of passing (found on a real app, #34).
+    @Test func aSplitViewCannotBeMeasured() {
+        let problems = LayoutContract.check("SplitLibraryView") { SplitLibraryView() }
+        #expect(problems.count == 1)
+        #expect(problems.first?.hasPrefix("LAYOUT_CONTRACT.md:14 SplitLibraryView: its width cannot be measured: it takes any width, even 1 pt") == true)
+        #expect(problems.first?.contains("give each page of the detail column and the sidebar a row of its own") == true)
+    }
+
+    // A known limit: a frame from zero to infinity hides the overflow and looks like text that
+    // wraps. It passes, with a note on the test output.
+    @Test func aStretchedFrameIsOpenNotFailed() {
+        #expect(LayoutContract.check("StretchedLibraryView") { StretchedLibraryView() } == [])
+        #expect(LayoutContract.width(of: StretchedLibraryView()) == .open)
+    }
+
+    @Test func widthKinds() {
+        #expect(LayoutContract.width(of: LibraryView()) == .measurable)
+        #expect(LayoutContract.width(of: SplitLibraryView()) == .hidden)
+        #expect(LayoutContract.width(of: List(0..<3, id: \.self) { Text("\($0)") }) == .hidden)
+        #expect(LayoutContract.width(of: VStack { Text("Title"); Text("A note that wraps") }) == .open)
+    }
+
+    // Text that wraps takes any width too, but has a width of its own: no false alarm.
+    @Test func wrappingTextIsMeasurable() throws {
+        let url = try contract("| x | Notes | f | | 260x300 | - | - | - |")
+        #expect(LayoutContract.check("Notes", contract: url) { VStack { Text("Title"); Text("A long note that wraps in a narrow pane") } } == [])
+    }
+
+    // The fix the message gives: the split view's row names its window, the page has its own row.
+    @Test func aSplitViewRowNamingItsWindowChecksTheWindow() throws {
+        let url = try contract("| x | SplitLibraryWindow | f | SplitLibraryWindow | 640x400 | 1000x700 | - | - |")
+        #expect(LayoutContract.check("SplitLibraryWindow", contract: url) { SplitLibraryWindow() } == [])
+    }
+
+    // Its width cannot be measured, its height still is.
+    @Test func aListPaneTallerThanItsMinimumIsStillReported() throws {
+        let url = try contract("| x | InspectorList | f | | 260x300 | - | - | - |")
+        let problems = LayoutContract.check("InspectorList", contract: url) {
+            List { Color.clear.frame(height: 20) }.frame(minHeight: 400)
+        }
+        #expect(problems.count == 2)
+        #expect(problems.last?.contains("it needs 400 pt of height") == true)
+    }
+
+    // Its window still declares Min, which is measurable.
+    @Test func theSplitViewWindowDeclaresMin() {
+        #expect(LayoutContract.check("SplitLibraryWindow") { SplitLibraryWindow() } == [])
+    }
+
     @Test func aBarThatCollapsesHolds() {
         #expect(LayoutContract.check("CompactLibraryView") { CompactLibraryView() } == [])
     }

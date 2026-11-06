@@ -11,3 +11,5 @@ Fixture for #34: LibraryView, UnboundedWindow and InspectorPane break; the other
 | Unbounded | UnboundedWindow | Sources/Screens/Screens.swift | UnboundedWindow | 480 × 300 | - | - | - | |
 | Inspector | InspectorPane | Sources/Screens/Screens.swift | | 260x300 | - | - | - | |
 | Bounded | BoundedWindow | Sources/Screens/Screens.swift | BoundedWindow | 480x300 | - | 1200x900 | - | |
+| Split library | SplitLibraryView | Sources/Screens/Screens.swift | SplitLibraryWindow | 640x400 | 1000x700 | - | - | |
+| Stretched library | StretchedLibraryView | Sources/Screens/Screens.swift | | 640x400 | - | - | - | |
