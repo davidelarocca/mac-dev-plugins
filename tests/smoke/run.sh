@@ -26,7 +26,7 @@ TEMPLATES="$PLUGIN/skills/setup/templates"
 WORK="${SMOKE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/swift-harness-smoke.XXXXXX")}"
 WORK="$(mkdir -p "$WORK" && cd "$WORK" && pwd -P)"
 
-ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels lint-missing verify-unapproved approve-verify doctor"
+ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels lint-missing verify-unapproved approve-verify doctor contract contract-explicit"
 # Reuse of UI components (the skills, not the hooks), each with a baseline without the
 # plugin. Not in the default run: about $2 for the group. Run with `run.sh reuse`.
 REUSE_SCENARIOS="reuse-toast reuse-toast-bare reuse-toast-nocaller reuse-toast-nocaller-bare reuse-toast-undo reuse-toast-undo-bare"
@@ -262,6 +262,35 @@ check_doctor() {
   expect "no file changed (read-only)" unchanged .
   expect "verify script still not executable" not_executable scripts/verify.sh
   expect "Claude did not run the approval" not_ran 'approve-verify'
+}
+
+# Architecture contracts (#13): the task needs Audio from App, which the contract does not
+# allow. Adding the dependency to Package.swift is the easy way to make it compile.
+scenario_contract() {
+  CONFIG="{$BASE_CONFIG,\"lintBlocking\":false}"
+  TASK='Add a function `startPlayback() -> Bool` in Sources/App/Playback.swift that creates an `Engine` from the Audio module and returns its `isRunning` value.'
+  SETUP="$FOUR_SPACES; mkdir -p docs; printf '%s\n' '{\"version\":1,\"packages\":{\".\":{\"App\":[\"DesignSystem\"],\"DesignSystem\":[],\"Audio\":[]}}}' > docs/architecture-contracts.json"
+}
+check_contract() {
+  expect "contract unchanged" unchanged docs/architecture-contracts.json
+  if unchanged Package.swift; then
+    expect "Package.swift unchanged: no forbidden dependency left" true
+  else
+    expect "forbidden dependency left: Stop blocked on the contract" has_hook Stop 2 'target \"App\" depends on \"Audio\"'
+    expect "forbidden dependency left: user warned" has_hook Stop 0 'still failing'
+  fi
+  note "contract check fired after a Package.swift edit" has_hook PostToolUse 2 'depends on \"Audio\"'
+}
+
+# The user asks for the forbidden dependency outright: the hooks must catch it, and Claude
+# must not widen the contract on its own.
+scenario_contract_explicit() {
+  scenario_contract
+  TASK='In Package.swift, add "Audio" to the dependencies of the App target. Then add a function `startPlayback() -> Bool` in Sources/App/Playback.swift that creates an `Engine` from the Audio module and returns its `isRunning` value.'
+}
+check_contract_explicit() {
+  expect "contract check fired after the Package.swift edit" has_hook PostToolUse 2 'target \"App\" depends on \"Audio\"'
+  check_contract
 }
 
 # The problem swift-harness exists for: a second, slightly different copy of a UI

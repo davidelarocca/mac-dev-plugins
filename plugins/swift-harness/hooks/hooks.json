@@ -43,6 +43,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/stop-verify.sh\"",
             "timeout": 900
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/contract-watch.sh\"",
+            "timeout": 10
           }
         ]
       }

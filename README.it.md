@@ -78,8 +78,8 @@ flowchart LR
 | Subagent | `ui-reviewer` | Review in sola lettura di un diff contro design system, registro e regole di architettura. |
 | Hook | SessionStart | Fissa lo stato di partenza del codice come riferimento (non come verificato), avvisa se l'ultima verifica è fallita sullo stesso codice, dice a Claude quando il comando di verifica non è approvato e segnala strumenti mancanti. |
 | Hook | PreToolUse | Chiede conferma prima che Claude modifichi `project.pbxproj` o un percorso protetto con i tool Edit o Write. Non è una sandbox: vedi [Limiti](#limiti). |
-| Hook | PostToolUse | Formatta e controlla il file Swift appena modificato (solo file dentro il progetto); esito del lint, modifiche ed errori del formatter ed errori di configurazione di SwiftLint tornano a Claude. |
-| Hook | Stop | Esegue la verifica veloce prima che Claude chiuda il turno, solo se sono cambiati input della build (codice Swift, impostazioni di progetto e build, risorse) e solo dopo che hai approvato il comando. |
+| Hook | PostToolUse | Formatta e controlla il file Swift appena modificato (solo file dentro il progetto); esito del lint, modifiche ed errori del formatter ed errori di configurazione di SwiftLint tornano a Claude. Dopo una modifica a `Package.swift` controlla il contratto di architettura. |
+| Hook | Stop | Esegue la verifica veloce e il controllo del contratto di architettura prima che Claude chiuda il turno, solo se sono cambiati input della build (codice Swift, impostazioni di progetto e build, risorse) e solo dopo che hai approvato il comando. Ti avvisa se il contratto è cambiato durante la sessione. |
 
 Il costo fisso di contesto è di circa 770 token per sessione; le skill caricano le istruzioni complete solo quando servono. Gli hook sono **spenti in ogni progetto che non contiene `.claude/swift-harness.json`**: gli altri progetti non vengono toccati.
 
@@ -100,6 +100,19 @@ Il costo fisso di contesto è di circa 770 token per sessione; le skill caricano
 </details>
 
 <details>
+<summary><b>Contratti di architettura (SwiftPM)</b></summary>
+
+In un progetto diviso in target SwiftPM il compilatore fa rispettare le dipendenze dichiarate, ma non protegge le dichiarazioni: per far compilare una modifica un agente può aggiungere `"Services"` al target `UI` in `Package.swift`, e il confine sparisce. `docs/architecture-contracts.json` elenca le dipendenze ammesse per ogni target (esempio nel [README in inglese](README.md#how-it-works)).
+
+- Le chiavi sono le cartelle dei package rispetto al repository (`"."`, `"Packages/Core"`). I target locali si scrivono come in `Package.swift`, i prodotti di altri package come `package/prodotto`. Ciò che non è elencato non è ammesso, e fallisce anche un target assente dal contratto: un modulo nuovo è una decisione. I target di test sono controllati solo se elencati.
+- Il grafo viene da `swift package dump-package`, senza analizzare il sorgente Swift. Il controllo gira a fine turno quando sono cambiati input della build e subito dopo che Claude modifica un `Package.swift`, solo dopo che hai approvato il comando di verifica: leggere il manifest lo esegue, come fa la build.
+- Una violazione blocca il turno indicando package, target e dipendenza. Per ammettere una dipendenza nuova aggiungila al contratto, meglio con un ADR.
+- Se il contratto cambia durante la sessione, a fine turno vedi le dipendenze ammesse aggiunte e tolte. Claude può comunque modificarlo (aggiungilo a `protectedPaths` perché le modifiche chiedano conferma), ma non in silenzio.
+- `/swift-harness:doctor` controlla il file e le cartelle dei package senza eseguire alcun manifest. Un progetto senza package SwiftPM, o con un solo target, non ha nulla da controllare.
+
+</details>
+
+<details>
 <summary><b>Le regole SwiftLint del design system</b></summary>
 
 Il `.swiftlint.yml` generato aggiunge sei regole che segnalano valori visivi scritti a mano fuori dal design system e dai test: colori, dimensioni dei font, padding, spaziature degli stack, raggi degli angoli e durate delle animazioni. Partono come warning, che fanno anche da lista della migrazione; quando il conteggio di una regola arriva a zero, portala a `error`. L'elenco completo con esempi è nel [README in inglese](README.md#how-it-works).
@@ -110,8 +123,8 @@ Il `.swiftlint.yml` generato aggiunge sei regole che segnalano valori visivi scr
 
 Uno strumento di qualità va verificato a sua volta. Ogni release passa da:
 
-- **77 controlli automatici** di hook e template (`tests/run.sh`), eseguiti in CI con la `/bin/bash` 3.2 di macOS, più ShellCheck e la compilazione dei file Swift di riferimento.
-- **Uno smoke test in sessioni reali di Claude Code** (`tests/smoke/`): 11 scenari per gli hook e 6 sul riuso dei componenti UI (3 sono baseline senza il plugin), con gli invarianti verificati in automatico. Ultima esecuzione completa degli scenari degli hook: 31 invarianti su 31 rispettati ([risultati](tests/smoke/RESULTS.md)).
+- **199 controlli automatici** di hook e template (`tests/run.sh`), eseguiti in CI con la `/bin/bash` 3.2 di macOS, più ShellCheck e la compilazione dei file Swift di riferimento.
+- **Uno smoke test in sessioni reali di Claude Code** (`tests/smoke/`): 13 scenari per gli hook e 6 sul riuso dei componenti UI (3 sono baseline senza il plugin), con gli invarianti verificati in automatico. Ultima esecuzione completa degli scenari degli hook: 49 invarianti su 49 rispettati ([risultati](tests/smoke/RESULTS.md)).
 
 Cosa ha fatto Claude in quelle sessioni:
 
@@ -187,6 +200,7 @@ Prossima tappa: **v1.3.0, un'architettura che si può far rispettare.** Contratt
 ## Limiti
 
 - **L'approvazione del comando di verifica copre i file che il comando nomina, non tutto ciò che legge.** Il comando viene diviso sugli spazi, non interpretato come shell: con virgolette o sintassi shell `/swift-harness:approve-verify` avvisa che i file eseguiti potrebbero non essere coperti, e `verify.inputs` li copre. Un `Makefile` dietro `make verify`, o uno script incluso con `source` da `verify.sh`, può cambiare senza una nuova approvazione. Approvare significa anche fidarsi della build del progetto (Run Script di Xcode, manifest e plugin di SwiftPM). Vedi [SECURITY.md](SECURITY.md).
+- **I contratti di architettura coprono solo i target SwiftPM.** Le dipendenze tra target Xcode, e gli import che la build permette tramite una dipendenza transitiva, non sono controllati.
 - **Il guard sui percorsi protetti non è una sandbox.** Copre solo i tool Edit, Write e MultiEdit; un comando shell eseguito via Bash può comunque modificare un file protetto. Per limiti rigidi usa le [regole di permesso](https://code.claude.com/docs/en/permissions) di Claude Code (`deny`).
 - I file Swift di riferimento della skill `design-system` sono esempi da adattare, non una libreria.
 - Gli snapshot test cambiano tra versioni di macOS: registrali ed eseguili sullo stesso sistema, e rigenerali dopo aggiornamenti importanti.

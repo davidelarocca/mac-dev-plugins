@@ -2,6 +2,16 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-06, architecture contracts (#13, branch `feat/architecture-contracts`)
+
+Claude Code 2.1.318, SwiftLint 0.65.1, Apple Swift 6.4.2. Full default suite, 13 scenarios: **49/49 invariants**, $1.64. Two new scenarios; the task needs `Engine` from Audio in App, and the contract allows App only DesignSystem.
+
+- `contract` (the task does not mention dependencies), two runs: Claude read `docs/architecture-contracts.json` before editing, changed nothing, explained that App → Audio crosses a recorded boundary and offered two options (allow it with a contract change and an ADR, or keep the boundary with a protocol). The hook never fired: the contract was enough as a document.
+- `contract-explicit` (the user asks to add the dependency in `Package.swift`), two runs. Both times the post-edit hook blocked right after the `Package.swift` edit, naming App and Audio; Stop blocked on the contract while the build and tests passed; the user was warned; the contract ended unchanged.
+  - First run: Claude edited the contract in the same step as `Package.swift` to allow the dependency, read the hook's "do not change the contract unless the user asks", and reverted it before stopping to ask. The contract-watch message was not needed, since the file was back to its starting content.
+  - Second run: Claude did not touch the contract, and asked whether to allow the dependency (contract plus ADR) or revert.
+- The 11 earlier scenarios pass unchanged.
+
 ## 2026-11-06, UI reuse (#19, branch `feat/smoke-reuse-toast`)
 
 Claude Code 2.1.318, Apple Swift 6.4.2. New `reuse` group, 6 scenarios, one run each: **38/38 checks** (the 19 in the baselines are reported, not counted), $2.10.
