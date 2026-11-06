@@ -64,9 +64,10 @@ if ! jq -e 'type == "object"' "$SH_CONFIG" >/dev/null 2>&1; then
 fi
 
 unknown="$(jq -r '
-  (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify", "registry"])[],
+  (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify", "registry", "layout"])[],
   (if (.verify | type) == "object" then (.verify | keys - ["enabled", "command", "maxAttempts", "inputs"])[] | "verify." + . else empty end),
-  (if (.registry | type) == "object" then (.registry | keys - ["enabled", "path", "sources"])[] | "registry." + . else empty end)
+  (if (.registry | type) == "object" then (.registry | keys - ["enabled", "path", "sources"])[] | "registry." + . else empty end),
+  (if (.layout | type) == "object" then (.layout | keys - ["enabled", "path"])[] | "layout." + . else empty end)
 ' "$SH_CONFIG" | paste -sd, - | sed 's/,/, /g')"
 if [ -n "$unknown" ]; then
   row WARN "Config keys" "unknown, ignored by the hooks (typo?): $unknown"
@@ -93,6 +94,11 @@ problems="$(jq -r '
     check(["registry", "enabled"]; type == "boolean"; "registry.enabled must be true or false"),
     check(["registry", "path"]; type == "string" and length > 0; "registry.path must be a path"),
     check(["registry", "sources"]; type == "array" and all(.[]; type == "string"); "registry.sources must be a list of folders")
+  else empty end),
+  check(["layout"]; type == "object"; "layout must be an object"),
+  (if (.layout | type) == "object" then
+    check(["layout", "enabled"]; type == "boolean"; "layout.enabled must be true or false"),
+    check(["layout", "path"]; type == "string" and length > 0; "layout.path must be a path")
   else empty end)
 ' "$SH_CONFIG" | paste -sd ';' - | sed 's/;/; /g')"
 if [ -n "$problems" ]; then
@@ -147,7 +153,7 @@ fi
 # ---------- placeholders and protected paths ----------
 
 with_placeholders=""
-for f in CLAUDE.md .claude/rules/*.md docs/ARCHITECTURE.md docs/DESIGN_SYSTEM.md docs/COMPONENT_REGISTRY.md \
+for f in CLAUDE.md .claude/rules/*.md docs/ARCHITECTURE.md docs/DESIGN_SYSTEM.md docs/COMPONENT_REGISTRY.md docs/LAYOUT_CONTRACT.md \
   .swiftlint.yml .swiftformat .claude/swift-harness.json scripts/verify.sh; do
   [ -f "$SH_ROOT/$f" ] && grep -qE '\{\{[A-Z_]+\}\}' "$SH_ROOT/$f" && with_placeholders="$with_placeholders${with_placeholders:+, }$f"
 done
@@ -272,6 +278,21 @@ else
       ;;
     3) row WARN "Component registry" "${registry_out#Component registry ($registry): }" ;;
     *) row FAIL "Component registry" "$(printf '%s\n' "$registry_out" | grep '^- ' | head -3 | sed 's/^- //' | paste -sd ';' - | sed 's/;/; /g'). Fix: update $registry" ;;
+  esac
+fi
+
+# Layout contract (#34). Reads Markdown and Swift files only; the sizes are measured by the tests.
+layout="$(sh_layout)"
+if [ "$(sh_cfg '.layout.enabled' 'true')" != true ]; then
+  row INFO "Layout contract" "off (layout.enabled is false)"
+elif [ ! -f "$SH_ROOT/$layout" ]; then
+  row INFO "Layout contract" "none: $layout gives each main screen the window sizes it must hold, measured by the project's tests; /swift-harness:setup creates it"
+else
+  layout_out="$("$here/layout.sh" check "$SH_ROOT" 2>&1)"
+  case $? in
+    0) row PASS "Layout contract" "$("$here/layout.sh" summary "$SH_ROOT"), checked at the end of each turn; the sizes are measured by the tests the verify command runs" ;;
+    3) row WARN "Layout contract" "${layout_out#Layout contract ($layout): }" ;;
+    *) row FAIL "Layout contract" "$(printf '%s\n' "$layout_out" | grep '^- ' | head -3 | sed 's/^- //' | paste -sd ';' - | sed 's/;/; /g'). Fix: update $layout" ;;
   esac
 fi
 

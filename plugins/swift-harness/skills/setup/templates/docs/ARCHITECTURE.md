@@ -27,6 +27,7 @@ Replace this table with the real modules after setup or after the first audit.
 - Design system: `docs/DESIGN_SYSTEM.md`
 - Component registry: `docs/COMPONENT_REGISTRY.md`
 - Product map (entities, destinations, relations, actions): `docs/PRODUCT_MAP.md`
+- Layout contract (window sizes per screen, compact behavior, presented UI): `docs/LAYOUT_CONTRACT.md`
 - Decisions: `docs/adr/` (index below)
 - Feature specs and step plans: {{EXISTING_DOCS_LINKS}}
 - Latest audit: `docs/audit/`

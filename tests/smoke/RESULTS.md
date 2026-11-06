@@ -2,6 +2,24 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-06, layout contract (#34, branch `feat/layout-contract`)
+
+Claude Code 2.1.319, SwiftLint 0.65.1, Apple Swift 6.4.2. Default suite, 16 scenarios: **62/62 invariants**, unchanged. New `layout` group, 6 scenarios, **one run each**, all checks pass, $2.04 for the group (suite and group $4.46). Every arm, baselines included, measured after the session with the template helper at the contract's sizes.
+
+| Scenario | Result | Cost |
+|---|---|---|
+| `layout-actions`: six actions in the header | `ViewThatFits` with a "More" menu; contract row updated; fits at every size | $0.30 |
+| `layout-actions-bare`: no plugin, no docs | Same approach (`ViewThatFits`, "More" menu); fits at every size | $0.18 |
+| `layout-chips`: nine chips that never truncate | A `FlowLayout` and a chip style added to the design system, with a registry and tests; previews at Min and Default; fits | $0.65 |
+| `layout-chips-bare` | A `FlowLayout` inside `LibraryView.swift`; fits | $0.22 |
+| `layout-explicit`: chips on one line, no wrap, scroll or menu | Read the contract, measured the names with a temporary test (about 745 pt against 560), changed nothing and asked with three options | $0.27 |
+| `layout-explicit-nodocs`: same, no `CLAUDE.md` and rules | Built the row, ran `swift test`: the layout test reported "needs 745 pt" at 560; Claude reverted the row and asked. The contract and the window minimum unchanged in both | $0.37 |
+
+- On this small app the baselines built adaptive layouts too: the window's `.frame(minWidth: 560)` is in plain sight. No behavior difference shown at n=1, as with reuse (#19); the plugin added the contract update, a design-system component and previews at the contract sizes, at 1.7x to 3x the cost.
+- The measurement worked in a real session: in `layout-explicit-nodocs` the layout test, run by Claude, gave the width needed and stopped a row that did not fit. The Stop never had to block: Claude ran the tests first. The Stop path for a failing layout test is the verify command's, covered by `stop-fails`; `layout.sh` at the Stop is covered by `tests/run.sh`.
+- Negative control before the run: a one-line chip row written by hand in the set-up fixture fails `scripts/verify.sh fast` with "at 560x400 it needs 857 pt of width" (also at 759 and 760, around Compact below), and fails the uniform measurement.
+- Found while building the measurement: a `.frame(minWidth:)` around a view hides content wider than the frame from `sizeThatFits` (measured: a 772 pt bar inside `.frame(minWidth: 640)` reports 640), so the contract measures the content and the window view apart. `.frame(maxWidth: .infinity)`, padding and stacks do not hide it. Offscreen rendering and the accessibility tree were tried for truncation and gave nothing usable inside a test process.
+
 ## 2026-11-06, fixes from the 1.3.0 audit (SH130, branch `fix/v1.3.1`)
 
 Claude Code 2.1.318, SwiftLint 0.65.1, Apple Swift 6.4.2. Default suite, 16 scenarios: **62/62 invariants**, $2.38. The Stop hook now records a run without the verify command apart from a pass (SH130-01); every scenario behaves as before, including `verify-unapproved` and the three registry scenarios.

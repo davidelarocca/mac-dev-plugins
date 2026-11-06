@@ -54,6 +54,8 @@ For each template, if the target file does not exist, create it with placeholder
 | `docs/DESIGN_SYSTEM.md` | `docs/DESIGN_SYSTEM.md` |
 | `docs/COMPONENT_REGISTRY.md` | `docs/COMPONENT_REGISTRY.md` |
 | `docs/PRODUCT_MAP.md` | `docs/PRODUCT_MAP.md` |
+| `docs/LAYOUT_CONTRACT.md` | `docs/LAYOUT_CONTRACT.md` (see step 7) |
+| `tests/LayoutContract.swift` | a test target that can import SwiftUI and the screens, without a sandboxed host app (see step 7) |
 | `docs/adr/0000-template.md` | `docs/adr/0000-template.md` |
 | `swiftlint.yml` | `.swiftlint.yml` |
 | `swiftformat` | `.swiftformat` (only if swiftformat was chosen) |
@@ -88,14 +90,26 @@ Only when the code is split into SwiftPM packages with several targets. Offer to
 
 Skip this step for Xcode-only projects or a single target: there is nothing to check.
 
-## 7. Companion plugins
+## 7. Layout contract
+
+Offer it when the app has windows the user resizes. Fill `docs/LAYOUT_CONTRACT.md` only with what you find and the user confirms:
+
+1. Find the main windows (`WindowGroup`, `Window`, `Settings`, `MenuBarExtra(...).menuBarExtraStyle(.window)`) and the view each shows, its `.frame(minWidth:minHeight:)` or `.defaultSize`, and `.windowResizability`. Find the panes with a width of their own (sidebar `navigationSplitViewColumnWidth`, inspectors).
+2. Propose one row per main screen: Min from the declared minimum, Default from `.defaultSize`; ask the user for what is not declared, and for Compact below and the compact behavior. A window with no declared minimum is a finding: say so, it can shrink to nothing.
+3. The test measures the content without the window's frame, because a minimum frame hides overflow. When the window's minimum frame is inside the content view, propose the split: a content type for View, a small window type that adds the frame for Window. Do not refactor without the user's agreement.
+4. Copy `tests/LayoutContract.swift` into a test target that can import the screens and is not hosted by a sandboxed app (a sandboxed host cannot read `docs/`). Add one test per row, `LayoutContract.check("<View>") { <View>(...) }` and one for its Window, with the preview data the views need. Run them and report the result: a failing row is a real finding, not something to fix in the setup.
+5. List popovers, sheets and secondary windows opened from these screens under "Presented UI".
+
+Skip it for apps without resizable windows. It can be done later by asking for a layout contract.
+
+## 8. Companion plugins
 
 Check `/plugin` state and recommend, without installing on your own:
 
 - `swift-lsp@claude-plugins-official`: type diagnostics and code navigation after edits. Recommended for every Swift project.
 - Optional: XcodeBuildMCP for build/run/test loops without Xcode open, or the Xcode 26.3+ MCP (`xcrun mcpbridge`) for RenderPreview. Suggest at most one to start.
 
-## 8. Finish
+## 9. Finish
 
 1. Show the list of created and merged files.
 2. Commit on the setup branch with message `chore: set up swift-harness` only after the user confirms.
