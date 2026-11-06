@@ -2,21 +2,11 @@
 
 Where swift-harness is going, and why. Live status is in the [milestones](https://github.com/davidelarocca/swift-harness/milestones) and [issues](https://github.com/davidelarocca/swift-harness/issues). This page is updated with every release.
 
-_Last updated: 6 November 2026, after v1.3.1 (screenshot review merged, porting planned, Studio idea parked)._
+_Last updated: 6 November 2026, after v1.4.0 (visual coherence shipped)._
 
 **Guiding principle:** every check the harness claims to run must actually run, and must be backed by a test. New features come after the existing gates are reliable, and claims about impact come with measurements.
 
-## Now: v1.4.0, visual coherence
-
-Screens that hold up at every window size, reviewed as they look, not only as they are written.
-
-| | What you get | Issue |
-|---|---|---|
-| 🪟 | **Window behavior.** Minimum, default and maximum sizes per main screen, rendered and checked at each size; popovers and secondary windows that stay inside a small window. | [#34](https://github.com/davidelarocca/swift-harness/issues/34) |
-| 👁️ | **Design review on screenshots.** The project's tests save images of each screen at its contract sizes, light and dark; the reviewer looks at them for alignment, spacing, hierarchy and truncation. Merged. | [#35](https://github.com/davidelarocca/swift-harness/issues/35) |
-| 🖼️ | **Visual regression for shared components.** Gallery and snapshot tests on a pinned macOS version; baselines change only with explicit approval. | [#9](https://github.com/davidelarocca/swift-harness/issues/9) |
-
-## Then: v1.5.0, iOS and multiplatform
+## Now: v1.5.0, iOS and multiplatform
 
 The same harness for iOS, iPadOS and multiplatform Swift apps. Most of swift-harness is already platform-neutral; what assumes macOS becomes platform-aware.
 
@@ -35,6 +25,7 @@ The same harness for iOS, iPadOS and multiplatform Swift apps. Most of swift-har
 
 | | What you get | Issue |
 |---|---|---|
+| ⌨️ | **Focus, keyboard and Reduce Motion checks** for shared components: what a test can measure on macOS, the rest as review checks. | [#52](https://github.com/davidelarocca/swift-harness/issues/52) |
 | ♿ | **Accessibility audit in UI tests** with Apple's `performAccessibilityAudit()`: missing labels, contrast, hit areas. | [#36](https://github.com/davidelarocca/swift-harness/issues/36) |
 | 🧵 | **Ratchet on concurrency escape hatches.** New `@unchecked Sendable`, `nonisolated(unsafe)` and similar need a reason. | [#37](https://github.com/davidelarocca/swift-harness/issues/37) |
 | 🧭 | **Context recovery after compaction.** A short checkpoint of the current task restored after Claude compacts its context. | [#10](https://github.com/davidelarocca/swift-harness/issues/10) |
@@ -49,6 +40,7 @@ Ideas parked until there is demand: a local, read-only view of the checks with e
 
 | Version | Highlights |
 |---|---|
+| [1.4.0](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.4.0) | Visual coherence: a layout contract measured by the project's tests at every window size, screenshots for the design review, and visual regression against baselines only you approve (`/swift-harness:approve-snapshots`), pinned to one macOS version. |
 | [1.3.1](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.3.1) | Fixes from an external audit: no "passed" without the verify command, inputs outside the project refused, links in watched folders covered, partial approval coverage shown, doctor reads package paths with spaces. |
 | [1.3.0](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.3.0) | Architecture you can enforce: SwiftPM architecture contracts checked from the real dependency graph, a component registry checked against the code, `/swift-harness:product-map` for navigation and lifecycle gaps, security settings proposed as protected paths, and real-session tests for reuse and product coherence. |
 | [1.2.1](https://github.com/davidelarocca/swift-harness/releases/tag/swift-harness--v1.2.1) | Fixes from an external audit: `verify.inputs` and a warning for verify commands with quotes, Xcode project paths with spaces, docs on re-verification after an update. |
