@@ -137,7 +137,7 @@ In a project split into SwiftPM targets, the compiler enforces the declared depe
 - After Claude edits a file in `registry.sources`: a note names the views, modifiers and styles in that file the registry does not list, and the entries whose File it is, as a reminder to update them in the same change. Not blocking.
 - `/swift-harness:doctor` shows the result and every component not listed.
 
-Columns are found by their header: the Components table needs Name and File. A registry in another format is reported by doctor and never blocks. "Component" means a top-level, non-private type that conforms to `View`, `ViewModifier`, `Layout`, `Shape`, an AppKit representable or a `*Style` protocol: presenters and other shared types are checked when listed, but not detected when missing. List views that are not for reuse (galleries, building blocks) under Internal. Which component a feature should reuse is still Claude's judgment, guided by the registry and the `ui-change` skill.
+Columns are found by their header: the Components table needs Name and File. A registry in another format is reported by doctor and never blocks. "Component" means a top-level, non-private type that conforms to `View`, `ViewModifier`, `Layout`, `Shape`, an AppKit or UIKit representable or a `*Style` protocol: presenters and other shared types are checked when listed, but not detected when missing. List views that are not for reuse (galleries, building blocks) under Internal. Which component a feature should reuse is still Claude's judgment, guided by the registry and the `ui-change` skill.
 
 </details>
 
