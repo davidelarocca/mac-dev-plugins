@@ -16,7 +16,7 @@
 #          Components declared under registry.sources (or in the given files) that the
 #          registry does not list: "Name<TAB>path:line" per line. A component is a type
 #          declared at top level, not private, that conforms to View, ViewModifier, Layout,
-#          Shape, an AppKit representable or a *Style protocol. Listed means: a Name under Components, or a mention under
+#          Shape, an AppKit or UIKit representable or a *Style protocol. Listed means: a Name under Components, or a mention under
 #          Internal or To consolidate. Never fails.
 #        registry.sh entries <project root> <file>
 #          Registry entries whose File is the given file: "ID Name" per line.
@@ -195,7 +195,7 @@ case "$mode" in
           decl = line; sub(/:.*/, "", decl); sub(/[ \t]+$/, "", decl)
           n = split(decl, w, /[ \t]+/); name = w[n]
           conf = line; sub(/^[^:]*:/, "", conf)
-          if (conf ~ /(^|[^A-Za-z0-9_])(View|ViewModifier|Layout|Shape|InsettableShape|NSViewRepresentable|NSViewControllerRepresentable|[A-Za-z]*Style)([^A-Za-z0-9_]|$)/) printf "%s\t%s:%d\n", name, file, start
+          if (conf ~ /(^|[^A-Za-z0-9_])(View|ViewModifier|Layout|Shape|InsettableShape|NSViewRepresentable|NSViewControllerRepresentable|UIViewRepresentable|UIViewControllerRepresentable|[A-Za-z]*Style)([^A-Za-z0-9_]|$)/) printf "%s\t%s:%d\n", name, file, start
         }'
     done <<<"$files" | while IFS=$'\t' read -r name where; do
       grep -qxF -- "$name" <<<"$listed" && continue

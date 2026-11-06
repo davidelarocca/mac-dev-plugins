@@ -968,6 +968,21 @@ for f in "$TEMPLATES/CLAUDE.md" "$TEMPLATES/docs/ARCHITECTURE.md" "$TEMPLATES/ru
 done
 if [ -z "$bad" ]; then ok "layout: CLAUDE.md, ARCHITECTURE.md, the UI rule, ui-change and ui-reviewer consult the contract"
 else nok "layout: CLAUDE.md, ARCHITECTURE.md, the UI rule, ui-change and ui-reviewer consult the contract" "$bad"; fi
+# #40: UI guidance per platform. iOS conventions are named, and the macOS-only helpers say so.
+bad=""
+for f in "$SKILLS/ui-change/SKILL.md" "$PLUGIN/agents/ui-reviewer.md" "$SKILLS/design-system/SKILL.md" "$TEMPLATES/rules/ui-features.md"; do
+  for term in 'Dynamic Type' 'safe area' '44 pt' 'size class'; do
+    grep -qiF "$term" "$f" || bad="$bad ${f#"$PLUGIN"/}:'$term'"
+  done
+done
+if [ -z "$bad" ]; then ok "platforms: ui-change, ui-reviewer, design-system and the UI rule name the iOS conventions"
+else nok "platforms: ui-change, ui-reviewer, design-system and the UI rule name the iOS conventions" "$bad"; fi
+bad=""
+for f in "$SKILLS/ui-change/SKILL.md" "$PLUGIN/agents/ui-reviewer.md" "$SKILLS/design-system/SKILL.md"; do
+  grep -qF 'macOS only' "$f" || bad="$bad ${f#"$PLUGIN"/}"
+done
+if [ -z "$bad" ]; then ok "platforms: the layout, screenshot and snapshot helpers are described as macOS only"
+else nok "platforms: the layout, screenshot and snapshot helpers are described as macOS only" "$bad"; fi
 if grep -qF '| `tests/LayoutContract.swift` |' "$SKILLS/setup/SKILL.md"; then ok "layout: setup installs the measuring helper"
 else nok "layout: setup installs the measuring helper"; fi
 if [ "$(readlink "$HERE/fixtures/layout/Tests/ScreensTests/LayoutContract.swift")" = "../../../../../plugins/swift-harness/skills/setup/templates/tests/LayoutContract.swift" ] &&
@@ -1458,12 +1473,24 @@ struct ToastEffectView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView { NSVisualEffectView() }
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
+
+struct ToastBlurView: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIVisualEffectView { UIVisualEffectView() }
+    func updateUIView(_ view: UIVisualEffectView, context: Context) {}
+}
+
+struct ToastPicker: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController { UIViewController() }
+    func updateUIViewController(_ controller: UIViewController, context: Context) {}
+}
 EOF
 out="$(registry missing "$R")"
 expect_result "registry: an unlisted View in sources is missing" 0 'Toast	Sources/DesignSystem/Toast\.swift:3' "$out"
 expect_result "registry: an unlisted ButtonStyle in sources is missing" 0 'ToastButtonStyle	' "$out"
 expect_result "registry: an unlisted Layout in sources is missing" 0 'ToastStack	' "$out"
 expect_result "registry: an unlisted AppKit representable in sources is missing" 0 'ToastEffectView	' "$out"
+expect_result "registry: an unlisted UIKit view representable in sources is missing" 0 'ToastBlurView	' "$out"
+expect_result "registry: an unlisted UIKit view controller representable in sources is missing" 0 'ToastPicker	' "$out"
 expect_result "registry: private, nested and non-UI types are not components" 0 'Toast' "$out" 'ToastShadow|ToastQueue|BadgeShape|Nested'
 expect_result "registry: missing can be limited to one file" 0 '^exit=0$' "$(registry missing "$R" "$R/Sources/DesignSystem/Badge.swift")"
 expect_result "registry: a missing entry does not fail the check" 0 '^exit=0$' "$(registry check "$R")"
