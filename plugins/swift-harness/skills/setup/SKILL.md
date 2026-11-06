@@ -85,4 +85,5 @@ Check `/plugin` state and recommend, without installing on your own:
 
 1. Show the list of created and merged files.
 2. Commit on the setup branch with message `chore: set up swift-harness` only after the user confirms.
-3. Suggest the next step: `/swift-harness:audit` if the project already has code, otherwise start with the design system skill.
+3. Tell the user that the end-of-turn check does not run `verify.command` until they approve it by typing `/swift-harness:approve-verify`, and that it asks again whenever the command or `scripts/verify.sh` changes. Do not run the approval yourself.
+4. Suggest the next step: `/swift-harness:audit` if the project already has code, otherwise start with the design system skill.
