@@ -521,6 +521,98 @@ out="$(PATH="$PEFAKES:$PATH" FAKE_TOOL_LOG="$TOOLLOG" FAKE_LINT=clean appr_stop 
 if [ "$(appr_runs)" = 2 ]; then ok "approval: an unverified stop is not recorded as passed"
 else nok "approval: an unverified stop is not recorded as passed" "runs=$(appr_runs) $out"; fi
 
+# ---------- doctor.sh (#12) ----------
+
+doctor() { # $1 project; prints "exit=<code>" then the report
+  local out code
+  out="$(PATH="$PEFAKES:$PATH" CLAUDE_PLUGIN_DATA="$TMP/data" "$SCRIPTS/doctor.sh" "$1" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+# $1 test name, $2 report, $3 status, $4 check name, $5 optional regex on the detail
+expect_row() {
+  if grep -qE -- "^\| $3 \| $4 \|.*${5:-}" <<<"$2"; then ok "$1"; else nok "$1" "$2"; fi
+}
+# Every file and folder, with content hashes, so any change made by doctor shows.
+snapshot() { (cd "$1" && find . -print | sort && find . -type f -exec shasum {} + | sort); }
+
+P="$(new_project doctor-ok)"
+cp "$TEMPLATE" "$P/scripts/verify.sh"
+sed -i '' -e 's/{{XCODE_CONTAINER_FLAG}}//' -e 's/{{SCHEME}}//' -e 's|{{LOCAL_PACKAGES}}|"Packages/Core"|' "$P/scripts/verify.sh"
+mkdir -p "$P/Packages/Core"
+echo '// swift-tools-version:5.9' >"$P/Packages/Core/Package.swift"
+set_config "$P" '{"format":"swiftformat","lint":"swiftlint","lintBlocking":true,"verify":{"command":"scripts/verify.sh fast","maxAttempts":3},"protectedPaths":["Sources/Audio/"],"guardPbxproj":true}'
+git -C "$P" add -A && git -C "$P" commit -qm "set up"
+approve "$P" >/dev/null
+before="$(snapshot "$P"; snapshot "$TMP/data")"
+out="$(doctor "$P")"
+after="$(snapshot "$P"; snapshot "$TMP/data")"
+if [[ "$out" == exit=0* ]] && ! grep -qE '^\| FAIL' <<<"$out"; then ok "doctor: a complete setup has no FAIL and exits 0"
+else nok "doctor: a complete setup has no FAIL and exits 0" "$out"; fi
+expect_row "doctor: shows the plugin version" "$out" PASS 'swift-harness' '[0-9]+\.[0-9]+\.[0-9]+'
+expect_row "doctor: config is valid" "$out" PASS 'Config' ''
+expect_row "doctor: verify script configures a package" "$out" PASS 'Verify script' 'Packages/Core'
+expect_row "doctor: approved verify command" "$out" PASS 'Verify approval' ''
+expect_row "doctor: SwiftPM packages reported for architecture contracts" "$out" INFO 'Project structure' 'Packages/Core'
+expect_row "doctor: no verification recorded yet" "$out" INFO 'Last verification' ''
+if [ "$before" = "$after" ]; then ok "doctor: changes no file in the project or the plugin data folder"
+else nok "doctor: changes no file in the project or the plugin data folder" "$(diff <(echo "$before") <(echo "$after") | head)"; fi
+
+echo 'let app = 30' >"$P/Sources/App.swift"
+FAKE_VERIFY_LOG=/dev/null FAKE_VERIFY_EXIT=1 hook stop-verify.sh "$P" >/dev/null 2>&1
+expect_row "doctor: a failed check on the current code is reported" "$(doctor "$P")" WARN 'Last verification' 'failed'
+
+D2="$TMP/doctor-unset"
+mkdir -p "$D2"
+git -C "$D2" init -q
+out="$(doctor "$D2")"
+if [[ "$out" == exit=1* ]]; then expect_row "doctor: a project without config points to setup" "$out" FAIL 'Config' 'swift-harness:setup'
+else nok "doctor: a project without config points to setup" "$out"; fi
+
+P="$(new_project doctor-bad)"
+printf '{"format": "swiftformat",' >"$P/.claude/swift-harness.json"
+expect_row "doctor: invalid JSON fails" "$(doctor "$P")" FAIL 'Config' 'JSON'
+
+set_config "$P" '{"format":"SwiftFormat","lint":"swiftlint","lintBlok":true,"verify":{"command":"scripts/verify.sh fast","maxAtempts":3},"protectedPaths":["{{PROTECTED_PATH}}","Sources/Gone/"]}'
+out="$(doctor "$P")"
+expect_row "doctor: unknown top-level key is reported" "$out" WARN 'Config keys' 'lintBlok'
+expect_row "doctor: unknown verify key is reported" "$out" WARN 'Config keys' 'verify.maxAtempts'
+expect_row "doctor: unsupported format value fails" "$out" FAIL 'Config' 'format'
+expect_row "doctor: placeholder in protectedPaths is reported" "$out" WARN 'Placeholders' 'swift-harness.json'
+expect_row "doctor: protected path that does not exist is reported" "$out" WARN 'Protected paths' 'Sources/Gone'
+
+P="$(new_project doctor-verify)"
+cp "$TEMPLATE" "$P/scripts/verify.sh"
+out="$(doctor "$P")"
+expect_row "doctor: verify.sh with placeholders fails" "$out" FAIL 'Verify script' 'placeholder'
+expect_row "doctor: a changed verify script is not approved" "$out" FAIL 'Verify approval' 'approve-verify'
+sed -i '' -e 's/{{XCODE_CONTAINER_FLAG}}//' -e 's/{{SCHEME}}//' -e 's/{{LOCAL_PACKAGES}}//' "$P/scripts/verify.sh"
+expect_row "doctor: verify.sh with no scheme and no package fails" "$(doctor "$P")" FAIL 'Verify script' 'scheme'
+sed -i '' -e 's|^PACKAGES=()|PACKAGES=("Packages/Missing")|' "$P/scripts/verify.sh"
+expect_row "doctor: verify.sh listing a missing package fails" "$(doctor "$P")" FAIL 'Verify script' 'Packages/Missing'
+chmod -x "$P/scripts/verify.sh"
+expect_row "doctor: verify script that is not executable fails" "$(doctor "$P")" FAIL 'Verify script' 'executable'
+set_config "$P" '{"verify":{"enabled":false}}'
+expect_row "doctor: verification turned off is a warning" "$(doctor "$P")" WARN 'Verify script' 'enabled'
+
+P="$(new_project doctor-tools)"
+set_config "$P" '{"format":"swift-format","lint":"swiftlint","lintBlocking":true}'
+out="$(PATH="$NOLINT:/usr/bin:/bin" SWIFT_HARNESS_EXTRA_PATH='' CLAUDE_PLUGIN_DATA="$TMP/data" "$SCRIPTS/doctor.sh" "$P" 2>&1)"
+expect_row "doctor: lintBlocking without SwiftLint fails" "$out" FAIL 'SwiftLint' 'brew install swiftlint'
+expect_row "doctor: swift-format without .swift-format is a warning" "$out" WARN 'Formatter config' '.swift-format'
+set_config "$P" '{"format":"none","lint":"swiftlint","lintBlocking":false}'
+out="$(PATH="$NOLINT:/usr/bin:/bin" SWIFT_HARNESS_EXTRA_PATH='' CLAUDE_PLUGIN_DATA="$TMP/data" "$SCRIPTS/doctor.sh" "$P" 2>&1)"
+expect_row "doctor: missing SwiftLint without lintBlocking is a warning" "$out" WARN 'SwiftLint' 'brew install swiftlint'
+expect_row "doctor: single target explains architecture contracts" "$out" INFO 'Project structure' 'SwiftPM'
+
+out="$(CLAUDE_PLUGIN_DATA='' "$SCRIPTS/doctor.sh" "$P" 2>&1)"
+expect_row "doctor: without the plugin data folder, approval is unknown" "$out" WARN 'Verify approval' 'swift-harness:doctor'
+
+D3="$TMP/doctor-nogit"
+mkdir -p "$D3/.claude"
+echo '{}' >"$D3/.claude/swift-harness.json"
+expect_row "doctor: a folder that is not a git repository fails" "$(doctor "$D3")" FAIL 'Git' ''
+
 # ---------- worktrees ----------
 
 P="$(new_project wt-main)"
