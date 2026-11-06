@@ -12,9 +12,10 @@
 //
 // Call it from a @MainActor test. With only a name, it takes Min and Default from the row of
 // docs/LAYOUT_CONTRACT.md whose View is that name. For a component or a screen without a row,
-// pass the sizes: `Screenshot.capture("PillView", sizes: ["320x60"]) { ... }`. A width alone
-// ("320") takes the height the view needs. `state:` names a variant ("empty", "long-text").
-// Each size is captured in light and dark appearance.
+// pass the sizes: `Screenshot.capture("PillView", sizes: ["320x60"], source: "Sources/DS/Pill.swift")`.
+// A width alone ("320") takes the height the view needs. `state:` names a variant ("empty",
+// "long-text"). `source:` is the file that draws it, for the reviewer to tell a stale image;
+// it defaults to the File cell of the contract row. Each size is captured in light and dark.
 //
 // These are evidence for a review, not a regression test: nothing is compared with a
 // baseline, and the images change with the macOS version and the display scale.
@@ -22,14 +23,16 @@
 // Images go to .build/swift-harness/screenshots/ under the project root (the folder with
 // .claude/swift-harness.json, docs/LAYOUT_CONTRACT.md or .git), or `screenshots.path` in
 // .claude/swift-harness.json, or `output:`. Each PNG has a .json beside it: screen, state,
-// platform, size, appearance, scale, OS, source file, time. A sandboxed test host cannot
-// write there: capture in a test target without a host app, or pass `output:`.
+// platform, size, appearance, scale, OS, source file, time. A test target hosted by a
+// sandboxed app can neither read the contract nor write to the project: capture in a test
+// target without a host app, or pass `sizes:`, `source:` and a writable `output:`.
 //
 // How: an offscreen borderless window, captured from the window server. ImageRenderer and
 // NSView.cacheDisplay are not used: they draw placeholders for List and other AppKit-backed
 // controls, or drop SwiftUI text. The capture needs a logged-in session (it works in Xcode,
 // `swift test` and GitHub's macOS runners); without one, or without permission to read the
-// window, the image is blank and capture() reports it.
+// window, the image looks like an empty window and capture() reports it as blank. A view of
+// one color is saved like any other.
 
 #if os(macOS)
 import AppKit
@@ -47,28 +50,33 @@ enum Screenshot {
         _ screen: String,
         sizes: [String]? = nil,
         state: String? = nil,
+        source: String? = nil,
         contract: URL? = nil,
         output: URL? = nil,
         file: StaticString = #filePath,
         @ViewBuilder _ make: () -> Content
     ) -> [String] {
         let testFolder = URL(fileURLWithPath: "\(file)").deletingLastPathComponent()
-        var source = ""
-        var cells: [String]
+        let url = contract ?? LayoutContract.locate(from: testFolder)
+        let text = url.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        let row = text.flatMap { LayoutContract.rows(in: $0) }?.first { $0.view == screen }
+        let source = source ?? text.flatMap { text in row.map { cell(text, line: $0.line, column: "file") } } ?? ""
+        let cells: [String]
         if let sizes {
             cells = sizes
         } else {
-            guard let url = contract ?? LayoutContract.locate(from: testFolder) else {
+            guard let url else {
                 return ["No layout contract found above \(file) to read \(screen)'s sizes: pass sizes:, or add docs/LAYOUT_CONTRACT.md."]
             }
-            guard let text = try? String(contentsOf: url, encoding: .utf8),
-                  let rows = LayoutContract.rows(in: text) else {
-                return ["Cannot read the Screens table of \(url.path)."]
+            guard let text else {
+                return ["Cannot read the layout contract at \(url.path). A test target hosted by a sandboxed app cannot read the project: capture in a test target without a host app, or pass sizes: (and source:, output:)."]
             }
-            guard let row = rows.first(where: { $0.view == screen }) else {
+            guard LayoutContract.rows(in: text) != nil else {
+                return ["\(url.lastPathComponent) has no \"## Screens\" table with View and Min columns."]
+            }
+            guard let row else {
                 return ["\(url.lastPathComponent) has no row with \(screen) as View: add one, or pass sizes:."]
             }
-            source = cell(text, line: row.line, column: "file")
             cells = [row.min, row.defaultSize]
         }
 
@@ -134,6 +142,18 @@ enum Screenshot {
 
     @MainActor
     static func render<Content: View>(_ content: Content, size: LayoutContract.Size, dark: Bool) -> Result<(CGImage, CGSize), Failure> {
+        let result = draw(content, size: size, dark: dark)
+        guard case .success(let (image, points)) = result, let color = uniformColor(image) else { return result }
+        // One color: blank only if an empty window of the same size draws the same pixels.
+        let empty = draw(EmptyView(), size: LayoutContract.Size(width: points.width, height: points.height), dark: dark)
+        if case .success(let (reference, _)) = empty, uniformColor(reference) == color {
+            return .failure(Failure("the image is blank, like an empty window: the window server did not draw the view, or this process may not read the window (Screen Recording permission)."))
+        }
+        return result
+    }
+
+    @MainActor
+    static func draw<Content: View>(_ content: Content, size: LayoutContract.Size, dark: Bool) -> Result<(CGImage, CGSize), Failure> {
         let host = NSHostingController(rootView: content)
         host.sizingOptions = []
         let height = size.height ?? min(host.sizeThatFits(in: CGSize(width: size.width, height: LayoutContract.unbounded)).height, 4000)
@@ -157,9 +177,6 @@ enum Screenshot {
               image.width > 0, image.height > 0 else {
             return .failure(Failure("the window server returned no image (no logged-in session?)."))
         }
-        if isBlank(image) {
-            return .failure(Failure("the image is blank: the window server did not draw the window, or this process may not read it (Screen Recording permission)."))
-        }
         return .success((image, points))
     }
 
@@ -177,8 +194,8 @@ enum Screenshot {
         return unsafeBitCast(symbol, to: WindowImage.self)
     }()
 
-    /// True when every pixel has the same color.
-    static func isBlank(_ image: CGImage) -> Bool {
+    /// The color of every pixel when they are all the same, else nil.
+    static func uniformColor(_ image: CGImage) -> UInt32? {
         let width = image.width, height = image.height
         var pixels = [UInt32](repeating: 0, count: width * height)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
@@ -188,8 +205,8 @@ enum Screenshot {
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
-        guard drawn, let first = pixels.first else { return true }
-        return pixels.allSatisfy { $0 == first }
+        guard drawn, let first = pixels.first else { return nil }
+        return pixels.allSatisfy { $0 == first } ? first : nil
     }
 
     /// `screenshots.path` from the first .claude/swift-harness.json above `start`, else

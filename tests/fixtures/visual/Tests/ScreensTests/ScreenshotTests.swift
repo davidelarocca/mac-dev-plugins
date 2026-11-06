@@ -56,6 +56,31 @@ struct ScreenshotTests {
         #expect(problems.first?.contains("the image is blank") == true)
     }
 
+    // SH46-01: a view of one color is a valid capture; only an image like an empty window is blank.
+    @Test func aSingleColorViewIsSaved() throws {
+        let out = try temporaryFolder()
+        #expect(Screenshot.capture("Swatch", sizes: ["80x40"], output: out) { Color.red } == [])
+        #expect(FileManager.default.fileExists(atPath: out.appendingPathComponent("Swatch-macos-80x40-light.png").path))
+    }
+
+    // SH46-04: explicit sizes still record the screen's source file, from its row or from source:.
+    @Test func explicitSizesKeepTheSourceFile() throws {
+        let out = try temporaryFolder()
+        #expect(Screenshot.capture("ArtistsView", sizes: ["300"], output: out) { ArtistsView() } == [])
+        #expect(try info(out, "ArtistsView-macos-300-light")["source"] as? String == "Sources/Screens/ArtistsView.swift")
+        #expect(Screenshot.capture("Badge", sizes: ["120"], source: "Sources/Badge.swift", output: out) { Text("New") } == [])
+        #expect(try info(out, "Badge-macos-120-light")["source"] as? String == "Sources/Badge.swift")
+    }
+
+    // SH46-03: a contract that cannot be read names the ways out.
+    @Test func anUnreadableContractNamesTheRemedies() {
+        let missing = URL(fileURLWithPath: "/nonexistent/LAYOUT_CONTRACT.md")
+        let problems = Screenshot.capture("ArtistsView", contract: missing) { ArtistsView() }
+        #expect(problems.count == 1)
+        #expect(problems.first?.contains("pass sizes:") == true)
+        #expect(problems.first?.contains("sandboxed") == true)
+    }
+
     @Test func aMissingRowIsReported() {
         let problems = Screenshot.capture("SettingsView") { EmptyView() }
         #expect(problems == ["LAYOUT_CONTRACT.md has no row with SettingsView as View: add one, or pass sizes:."])
@@ -71,6 +96,11 @@ struct ScreenshotTests {
         try FileManager.default.createDirectory(at: root.appendingPathComponent("App/Tests"), withIntermediateDirectories: true)
         try #"{"screenshots":{"path":"review/shots"}}"#.write(to: root.appendingPathComponent(".claude/swift-harness.json"), atomically: true, encoding: .utf8)
         #expect(Screenshot.folder(from: root.appendingPathComponent("App/Tests")) == root.appendingPathComponent("review/shots"))
+    }
+
+    private func info(_ folder: URL, _ name: String) throws -> [String: Any] {
+        let data = try Data(contentsOf: folder.appendingPathComponent("\(name).json"))
+        return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
     private func temporaryFolder() throws -> URL {
