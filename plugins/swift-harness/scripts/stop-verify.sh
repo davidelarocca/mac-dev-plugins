@@ -22,7 +22,10 @@ fi
 # Component registry (#7): reads Markdown only, so it needs no approval.
 run_registry=false
 sh_registry_on && run_registry=true
-[ "$verify_enabled" = "true" ] || [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ] || [ "$run_registry" = "true" ] || exit 0
+# Layout contract (#34): the same, Markdown and Swift files read as text.
+run_layout=false
+sh_layout_on && run_layout=true
+[ "$verify_enabled" = "true" ] || [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ] || [ "$run_registry" = "true" ] || [ "$run_layout" = "true" ] || exit 0
 
 command_line="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
 max_attempts="$(sh_cfg '.verify.maxAttempts' '3')"
@@ -39,6 +42,7 @@ checks=""
 [ "$run_verify" = "true" ] && checks="$command_line"
 [ "$run_contracts" = "true" ] && checks="$checks + architecture contracts"
 [ "$run_registry" = "true" ] && checks="${checks:+$checks + }component registry"
+[ "$run_layout" = "true" ] && checks="${checks:+$checks + }layout contract"
 { [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ]; } && checks="${checks:+$checks + }SwiftLint (lintBlocking)"
 
 fp="$(sh_identity)"
@@ -136,9 +140,18 @@ if [ "$run_registry" = "true" ]; then
   fi
 fi
 
+if [ "$run_layout" = "true" ]; then
+  layout_out="$("$(dirname "$0")/layout.sh" check "$SH_ROOT" 2>&1)"
+  # Exit 3: a contract in another format is reported by doctor, never blocks.
+  if [ $? -eq 1 ]; then
+    printf '\n== Layout contract ==\n%s\n' "$layout_out" >>"$out"
+    [ "$status" -ne 0 ] || status=1
+  fi
+fi
+
 if [ "$status" -eq 0 ]; then
   # "passed" means the verify command ran and passed (SH130-01). Lint, contracts or the
-  # registry alone are recorded apart, with the checks that ran, so doctor can say so and an
+  # registry or the layout contract alone are recorded apart, with the checks that ran, so doctor can say so and an
   # approval given later still runs the verify command on this code.
   if [ "$run_verify" = "true" ]; then
     printf '%s' "$fp" > "$state/passed"
