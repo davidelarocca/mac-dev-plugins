@@ -181,15 +181,20 @@ case "$mode" in
     fi
     while IFS= read -r rel; do
       [ -n "$rel" ] && [ -f "$root/$rel" ] || continue
-      # Top-level declarations only (no indentation), generic parameters removed.
+      # Top-level declarations only (no indentation), generic parameters removed, outside
+      # block comments. A conformance list may continue on the next lines, up to the brace.
       sed -E 's/<[^<>]*>//g' "$root/$rel" | awk -v file="$rel" '
-        /^((@[A-Za-z]+(\([^)]*\))?|public|internal|package|open|final|nonisolated)[ \t]+)*(struct|class|enum|actor)[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*:/ {
-          line = $0
+        incomment { if ($0 ~ /\*\//) incomment = 0; next }
+        /^[ \t]*\/\*/ { if ($0 !~ /\*\//) incomment = 1; next }
+        /^((@[A-Za-z]+(\([^)]*\))?|public|internal|package|open|final|nonisolated)[ \t]+)*(struct|class|enum|actor)[ \t]+[A-Za-z_][A-Za-z0-9_]*/ {
+          start = NR; line = $0; extra = 0
+          while (line !~ /\{/ && extra < 5 && (getline more) > 0) { line = line " " more; extra++ }
           sub(/\{.*/, "", line); sub(/[ \t]where[ \t].*/, "", line)
-          decl = line; sub(/:.*/, "", decl)
+          if (index(line, ":") == 0) next
+          decl = line; sub(/:.*/, "", decl); sub(/[ \t]+$/, "", decl)
           n = split(decl, w, /[ \t]+/); name = w[n]
           conf = line; sub(/^[^:]*:/, "", conf)
-          if (conf ~ /(^|[^A-Za-z0-9_])(View|ViewModifier|Layout|Shape|InsettableShape|NSViewRepresentable|NSViewControllerRepresentable|[A-Za-z]*Style)([^A-Za-z0-9_]|$)/) printf "%s\t%s:%d\n", name, file, NR
+          if (conf ~ /(^|[^A-Za-z0-9_])(View|ViewModifier|Layout|Shape|InsettableShape|NSViewRepresentable|NSViewControllerRepresentable|[A-Za-z]*Style)([^A-Za-z0-9_]|$)/) printf "%s\t%s:%d\n", name, file, start
         }'
     done <<<"$files" | while IFS=$'\t' read -r name where; do
       grep -qxF -- "$name" <<<"$listed" && continue

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Fixes from an external audit of 1.3.0 (SH130-01 to SH130-08), each reproduced on 1.3.0 and covered by a test that failed before the fix.
+
+- **No pass without the verify command** (SH130-01): with `verify.enabled: false`, or the command not approved, a turn where only the component registry or SwiftLint ran was recorded as passed, and `/swift-harness:doctor` showed "Last verification: passed on the current code" although no build or test had run. Now such a result is recorded apart, with the checks that ran: doctor shows it as a warning ("only component registry passed; build and tests were not run"), it is not re-run on unchanged code, and approving the command later runs it on that code.
+- **Inputs outside the project are refused** (SH130-03): 1.2.1 said a `verify.inputs` path outside the project is refused, but `/swift-harness:approve-verify` only showed it as "not covered" and approved anyway. The approval is now refused until the entry is removed.
+- **Links in a `verify.inputs` folder are covered** (SH130-04): a link inside a watched folder did not count, so changing the file it points to, or pointing it elsewhere, kept the approval valid. Links now count by target and content, and a link that leads outside the project makes the approval refused. Approvals of a folder that contains links need to be given again once; others stay valid.
+- **Partial coverage is visible** (SH130-02): a command with quotes or shell syntax and no `verify.inputs` shows as `approved, partial coverage`, and doctor warns. It still runs: making `verify.inputs` mandatory would break working setups.
+- `/swift-harness:doctor` reads quoted package paths with spaces in the generated `scripts/verify.sh` (SH130-05), and says when a `PACKAGES` list cannot be read without running the script instead of reporting a false failure.
+- Component detection in the registry check: a conformance list on the next line is found, declarations inside block comments are not (SH130-07).
+- `tests/real-app/contracts.sh <package>` repeats the architecture contracts check on any real SwiftPM package, on a copy (SH130-08). Run on the ~97k-line app of #13: 8 targets, pass, a disallowed edge and a missing target both fail.
+
 ## swift-harness 1.3.0 (2026-11-06)
 
 Architecture you can enforce, and the product as a whole. **Upgrading:** in a project whose `docs/COMPONENT_REGISTRY.md` has an entry pointing to a missing file or an undeclared name, the end of a turn that changes code is now blocked until the registry is fixed. Run `/swift-harness:doctor` first to see it; `"registry": {"enabled": false}` turns the check off. Nothing else needs a change: architecture contracts and the product map are opt-in.

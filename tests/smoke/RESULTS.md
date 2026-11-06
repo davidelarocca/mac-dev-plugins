@@ -2,6 +2,12 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-06, fixes from the 1.3.0 audit (SH130, branch `fix/v1.3.1`)
+
+Claude Code 2.1.318, SwiftLint 0.65.1, Apple Swift 6.4.2. Default suite, 16 scenarios: **62/62 invariants**, $2.38. The Stop hook now records a run without the verify command apart from a pass (SH130-01); every scenario behaves as before, including `verify-unapproved` and the three registry scenarios.
+
+Real package, read-only, with `tests/real-app/contracts.sh` on the ~97k-line app used for #13 (Swift 6.4.2): 8 targets in the generated contract; the unchanged package passes; the contract without the edge `CadenceDomain -> CadenceDSP` fails naming it; the contract without `CadenceUI` fails with "not in the contract". dump-package 1 s, each check under 1 s.
+
 ## 2026-11-06, component registry (#7, branch `feat/registry-validation`)
 
 Claude Code 2.1.318, SwiftLint 0.65.1, Apple Swift 6.4.2. Default suite, now 16 scenarios: **all invariants pass**. 15 scenarios $2.34, then `registry-swift-only` added and run alone, $0.20. The component detection was extended to `Layout`, `Shape` and AppKit representables after the run; no scenario uses them.
