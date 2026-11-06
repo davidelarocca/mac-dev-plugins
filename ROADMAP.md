@@ -8,7 +8,7 @@ _Last updated: 6 November 2026, after v1.2.0._
 
 ## Now: v1.3.0, architecture you can enforce
 
-Turn the architecture written in your docs into checks.
+Turn the architecture and the product written in your docs into checks, and into the context Claude works from.
 
 | | What you get | Issue |
 |---|---|---|
@@ -17,11 +17,22 @@ Turn the architecture written in your docs into checks.
 | 🧭 | **A product map Claude works from.** `/swift-harness:product-map` maps entities, their pages, where each one appears, relations and actions from the code, and lists the gaps: items you cannot open from where they are shown, related items shown as plain text, lists you cannot rename or reorder. The map then guides every UI change and review. | [#30](https://github.com/davidelarocca/swift-harness/issues/30) |
 | 🗂️ | **A component registry that stays true.** Stale paths, missing entries and removed components are caught automatically. | [#7](https://github.com/davidelarocca/swift-harness/issues/7) |
 
+## Next: v1.4.0, visual coherence
+
+Screens that hold up at every window size, reviewed as they look, not only as they are written.
+
+| | What you get | Issue |
+|---|---|---|
+| 🪟 | **Window behavior.** Minimum, default and maximum sizes per main screen, rendered and checked at each size; popovers and secondary windows that stay inside a small window. | [#34](https://github.com/davidelarocca/swift-harness/issues/34) |
+| 👁️ | **Design review on screenshots.** The reviewer looks at the rendered UI (snapshots, previews, the running app) against the design system and the product map. | [#35](https://github.com/davidelarocca/swift-harness/issues/35) |
+| 🖼️ | **Visual regression for shared components.** Gallery and snapshot tests on a pinned macOS version; baselines change only with explicit approval. | [#9](https://github.com/davidelarocca/swift-harness/issues/9) |
+
 ## Later
 
 | | What you get | Issue |
 |---|---|---|
-| 🖼️ | **Visual regression for shared components.** Gallery and snapshot tests on a pinned macOS version; baselines change only with explicit approval. | [#9](https://github.com/davidelarocca/swift-harness/issues/9) |
+| ♿ | **Accessibility audit in UI tests** with Apple's `performAccessibilityAudit()`: missing labels, contrast, hit areas. | [#36](https://github.com/davidelarocca/swift-harness/issues/36) |
+| 🧵 | **Ratchet on concurrency escape hatches.** New `@unchecked Sendable`, `nonisolated(unsafe)` and similar need a reason. | [#37](https://github.com/davidelarocca/swift-harness/issues/37) |
 | 🧭 | **Context recovery after compaction.** A short checkpoint of the current task restored after Claude compacts its context. | [#10](https://github.com/davidelarocca/swift-harness/issues/10) |
 | 🔐 | **Entitlements contract.** Sandbox, hardened runtime and capabilities read from the real entitlements and build settings; any change fails verification until you approve it. | [#32](https://github.com/davidelarocca/swift-harness/issues/32) |
 | ⏱️ | **Performance budget.** Key operations measured against recorded baselines in the full check; a regression fails with the numbers. Later, a skill that explains slowness with a trace. | [#33](https://github.com/davidelarocca/swift-harness/issues/33) |

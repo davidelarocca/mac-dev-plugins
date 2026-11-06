@@ -257,7 +257,7 @@ scripts/verify.sh
 
 ## Roadmap
 
-Next up: **v1.3.0, architecture you can enforce.** Architecture contracts for SwiftPM projects, a validated component registry, and a real-session test that Claude reuses an existing component instead of building a second one. See the full [roadmap](ROADMAP.md).
+Next up: **v1.3.0, architecture you can enforce.** Architecture contracts for SwiftPM projects, a product map of entities, navigation and actions, and a validated component registry. Then **v1.4.0, visual coherence**: window behavior at every size and a design review on screenshots. See the full [roadmap](ROADMAP.md).
 
 ## Limitations
 
