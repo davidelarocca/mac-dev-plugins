@@ -169,10 +169,27 @@ Code shows tokens and modifiers, not whether rows line up or two screens look al
 ```
 
 - `Screenshot.capture` (copied by setup next to `LayoutContract.swift`, from `templates/tests/Screenshot.swift`) renders the screen in an offscreen window at the Min and Default sizes of its layout contract row, or at sizes you pass, in light and dark, and saves PNG images with a `.json` beside each (screen, state, platform, size, scale, OS, source file) to `.build/swift-harness/screenshots/`. In a package test target it runs in `scripts/verify.sh fast` at the end of every turn, so the images follow the code; in an Xcode test target, in `full` mode. A capture that looks like an empty window is reported as a problem; a view of one color is saved. The reviewer reports an image older than its source file as stale.
-- `ui-reviewer` opens the images of the changed screens and of screens next to them, and reports what it sees: edges that do not line up, spacing that differs between screens built the same way, hierarchy, truncation, dark-mode contrast. Each finding names the image and the `file:line` that draws it. These are review notes, not a gate: nothing is compared with a baseline (that is [#9](https://github.com/davidelarocca/swift-harness/issues/9)).
+- `ui-reviewer` opens the images of the changed screens and of screens next to them, and reports what it sees: edges that do not line up, spacing that differs between screens built the same way, hierarchy, truncation, dark-mode contrast. Each finding names the image and the `file:line` that draws it. These are review notes, not a gate: comparing with approved images is the job of the snapshot tests (below).
 - Why a window: `ImageRenderer` draws a placeholder for `List` and other AppKit-backed controls, and `NSView.cacheDisplay` drops SwiftUI text. The window server capture shows the screen as the app draws it.
 
 Measured on a small fixture, 3 runs per arm ([results](tests/smoke/RESULTS.md)): the defects planted in the code were found with and without images; with images the reviewer gave positions instead of guesses, never misdescribed the layout, and found a rendering defect the code-only review missed every time.
+
+</details>
+
+<details>
+<summary><b>Visual regression with approved baselines</b></summary>
+
+A shared component changed for one screen can shift every other screen that uses it. The project's tests compare each component with images you approved:
+
+```swift
+#expect(Snapshot.verify("PillView", sizes: ["320"], state: "long-text") { PillView(pill: .success(longTitle)) } == [])
+#expect(Snapshot.verify("PillView", sizes: ["320"], locale: "ar") { PillView(pill: .success("Added")) } == [])
+```
+
+- `Snapshot.verify` (copied by setup next to `Screenshot.swift`, from `templates/tests/Snapshot.swift`) renders the view the same way as the screenshots, in light and dark, and compares each image with its baseline in `snapshots/`. `locale:` sets the language and the text direction, so a gallery covers long languages and right to left.
+- A test never writes a baseline. A missing or different image fails and names the region that changed ("85 of 151200 pixels differ, within x 96-110, y 118-126 pt"); the new image and a diff with the changed pixels in red wait in `.build/swift-harness/snapshots/`. You look at them and approve with `/swift-harness:approve-snapshots`, which copies them into `snapshots/` to commit.
+- Claude cannot replace a baseline quietly: the guard asks before an Edit or Write in `snapshots/`, and at the end of a turn you are told about baselines changed without approval, shell commands included. In real sessions, Claude handed the approval back to the user even when asked to update the baselines ([results](tests/smoke/RESULTS.md)).
+- Baselines are pinned to the macOS version and display scale they were made on. On another version an image is reported as not compared, never as a match.
 
 </details>
 
@@ -321,7 +338,7 @@ scripts/verify.sh
 
 ## Roadmap
 
-Next up: **v1.4.0, visual coherence.** Window behavior at every size, a design review on screenshots, and visual regression for shared components. Then **v1.5.0, iOS and multiplatform**, with a read-only porting audit for macOS apps, and **v1.6.0, assisted macOS to iOS porting**. See the full [roadmap](ROADMAP.md).
+Next up: **v1.5.0, iOS and multiplatform**, with a read-only porting audit for macOS apps, then **v1.6.0, assisted macOS to iOS porting**. See the full [roadmap](ROADMAP.md).
 
 ## Limitations
 

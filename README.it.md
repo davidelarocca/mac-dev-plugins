@@ -67,8 +67,9 @@ flowchart LR
 
 | Tipo | Nome | Cosa fa |
 |---|---|---|
-| Skill (la lanci tu) | `/swift-harness:setup` | Prepara un progetto nuovo o esistente: `CLAUDE.md`, `.claude/rules/`, `docs/` (architettura, design system, registro componenti, product map, template ADR), `.swiftlint.yml`, formatter, `scripts/verify.sh`, config degli hook. Non sovrascrive mai file esistenti. |
+| Skill (la lanci tu) | `/swift-harness:setup` | Prepara un progetto nuovo o esistente: `CLAUDE.md`, `.claude/rules/`, `docs/` (architettura, design system, registro componenti, product map, contratto di layout, template ADR), `.swiftlint.yml`, formatter, `scripts/verify.sh`, config degli hook. Non sovrascrive mai file esistenti. |
 | Skill (la lanci tu) | `/swift-harness:approve-verify` | Mostra il comando di verifica del progetto e i file che esegue, poi lo approva per il controllo a fine turno. Puoi lanciarla solo tu. `/swift-harness:approve-verify revoke` toglie l'approvazione. |
+| Skill (la lanci tu) | `/swift-harness:approve-snapshots` | Mostra le nuove immagini lasciate dagli snapshot test falliti (con i pixel cambiati in rosso) e copia quelle che approvi nella cartella delle baseline. Puoi lanciarla solo tu: i test non scrivono mai una baseline. |
 | Skill (la lanci tu) | `/swift-harness:doctor` | Controllo in sola lettura della configurazione: strumenti, chiavi e valori della config, segnaposto `{{...}}` rimasti, script di verifica e approvazione, config del formatter, struttura del progetto e ultima verifica. Una riga PASS / WARN / FAIL per controllo, con la correzione. Non modifica file. |
 | Skill (la lanci tu) | `/swift-harness:audit` | Audit in sola lettura di architettura, coerenza della UI e salute del codice, con report e piano di migrazione. |
 | Skill (la lanci tu) | `/swift-harness:product-map` | Mappa del prodotto ricavata dal codice, in sola lettura: entità, le loro pagine, ogni punto in cui compaiono, relazioni, raccolte gestite dall'utente e azioni. Elenca i buchi con le prove: elementi che non si aprono da dove sono mostrati, entità collegate mostrate come testo semplice, liste che non si possono rinominare o riordinare, azioni che mancano in alcuni punti. Scrive `docs/PRODUCT_MAP.md` dopo la tua approvazione. |
@@ -78,9 +79,9 @@ flowchart LR
 | Skill (automatica) | `adr` | Registra una decisione architetturale e la indicizza. |
 | Subagent | `ui-reviewer` | Review in sola lettura di un diff contro design system, registro, product map e regole di architettura. |
 | Hook | SessionStart | Fissa lo stato di partenza del codice come riferimento (non come verificato), avvisa se l'ultima verifica è fallita sullo stesso codice, dice a Claude quando il comando di verifica non è approvato e segnala strumenti mancanti. |
-| Hook | PreToolUse | Chiede conferma prima che Claude modifichi `project.pbxproj` o un percorso protetto con i tool Edit o Write. Non è una sandbox: vedi [Limiti](#limiti). |
+| Hook | PreToolUse | Chiede conferma prima che Claude modifichi `project.pbxproj`, un percorso protetto o una baseline degli snapshot con i tool Edit o Write. Non è una sandbox: vedi [Limiti](#limiti). |
 | Hook | PostToolUse | Formatta e controlla il file Swift appena modificato (solo file dentro il progetto); esito del lint, modifiche ed errori del formatter ed errori di configurazione di SwiftLint tornano a Claude. Dopo una modifica a `Package.swift` controlla il contratto di architettura. |
-| Hook | Stop | Esegue la verifica veloce e il controllo del contratto di architettura prima che Claude chiuda il turno, solo se sono cambiati input della build (codice Swift, impostazioni di progetto e build, risorse) e solo dopo che hai approvato il comando. Ti avvisa se il contratto è cambiato durante la sessione. |
+| Hook | Stop | Esegue la verifica veloce e il controllo del contratto di architettura prima che Claude chiuda il turno, solo se sono cambiati input della build (codice Swift, impostazioni di progetto e build, risorse) e solo dopo che hai approvato il comando. Ti avvisa se il contratto è cambiato durante la sessione, e se le baseline degli snapshot sono cambiate senza `/swift-harness:approve-snapshots`, anche tramite comandi shell. |
 
 Il costo fisso di contesto è di circa 770 token per sessione; le skill caricano le istruzioni complete solo quando servono. Gli hook sono **spenti in ogni progetto che non contiene `.claude/swift-harness.json`**: gli altri progetti non vengono toccati.
 
@@ -123,6 +124,58 @@ Claude legge `docs/COMPONENT_REGISTRY.md` prima di costruire la UI, quindi una v
 - `/swift-harness:doctor` mostra l'esito e ogni componente non elencato.
 
 Le colonne si trovano dall'intestazione: la tabella Components deve avere Name e File. Un registro in un altro formato viene segnalato da doctor e non blocca mai. "Componente" vuol dire un tipo di primo livello, non privato, conforme a `View`, `ViewModifier`, `Layout`, `Shape`, a un representable AppKit o a un protocollo `*Style`: presenter e altri tipi condivisi vengono controllati se elencati, ma non rilevati se mancano. Le view non pensate per il riuso (gallery, pezzi di un componente) vanno sotto Internal. Quale componente riusare resta una scelta di Claude, guidata dal registro e dalla skill `ui-change`.
+
+</details>
+
+<details>
+<summary><b>Schermate che reggono a ogni dimensione della finestra</b></summary>
+
+Claude costruisce una schermata alla dimensione della sua preview. `docs/LAYOUT_CONTRACT.md` dà a ogni schermata principale le dimensioni che deve reggere: Min, Default, Max, una larghezza sotto la quale passa a un layout compatto e cosa cambia lì, e i popover e le finestre che apre. I test del progetto la misurano:
+
+```swift
+#expect(LayoutContract.check("LibraryView") { LibraryView() } == [])     // il contenuto
+#expect(LayoutContract.check("LibraryWindow") { LibraryWindow() } == []) // la finestra che lo mostra
+```
+
+- `LayoutContract.check` (copiato dal setup in un target di test, da `templates/tests/LayoutContract.swift`) propone alla view ogni dimensione della riga con `NSHostingController.sizeThatFits(in:)` e segnala ogni dimensione in cui il contenuto chiede più spazio: "at 560x400 it needs 857 pt of width". Per la finestra controlla che il minimo dichiarato sia Min, così non si stringe fino a sparire né si ferma sopra Min, e che non cresca oltre Max. In un target di test di un package girano in `scripts/verify.sh fast`, quindi un layout che si rompe blocca la fine del turno come un test fallito; in un target di test Xcode lo script generato esegue i test solo in modalità `full`.
+- A fine turno `scripts/layout.sh` controlla il contratto stesso: ogni View esiste nel suo File, ogni Window è dichiarata, ognuna è misurata da un test, le dimensioni sono dimensioni. Legge Markdown e Swift come testo, quindi gira senza l'approvazione del comando di verifica.
+- Dopo che Claude modifica un file che disegna una schermata del contratto, una nota ne indica le dimensioni. `ui-change`, la regola sulla UI e `ui-reviewer` leggono il contratto; il reviewer controlla ciò che i test non vedono.
+
+Il contenuto si misura senza il frame della finestra: un `.frame(minWidth:)` attorno a una view nasconde il contenuto più largo del frame, quindi il minimo della finestra va in una piccola view della finestra, misurata a parte. Non misurati: testo troncato, sovrapposizioni e dove si aprono i popover; sono controlli di review, sugli screenshot quando il progetto li cattura (sotto).
+
+</details>
+
+<details>
+<summary><b>Design review sugli screenshot</b></summary>
+
+Il codice mostra token e modifier, non se le righe sono allineate o se due schermate si somigliano. I test del progetto possono salvare immagini di ogni schermata per l'agente `ui-reviewer`:
+
+```swift
+#expect(Screenshot.capture("LibraryView") { LibraryView() } == [])
+```
+
+- `Screenshot.capture` (copiato dal setup accanto a `LayoutContract.swift`, da `templates/tests/Screenshot.swift`) disegna la schermata in una finestra fuori schermo alle dimensioni Min e Default della sua riga del contratto, o a quelle che passi, in chiaro e scuro, e salva immagini PNG con un `.json` accanto (schermata, stato, lingua, piattaforma, dimensione, scala, OS, file sorgente) in `.build/swift-harness/screenshots/`. In un target di test di un package gira in `scripts/verify.sh fast` a ogni fine turno, quindi le immagini seguono il codice; in un target di test Xcode, in modalità `full`. Una cattura che sembra una finestra vuota viene segnalata come problema; una view di un solo colore viene salvata. Il reviewer segnala come vecchia un'immagine più vecchia del suo file sorgente.
+- `ui-reviewer` apre le immagini delle schermate cambiate e di quelle vicine e riporta ciò che vede: bordi non allineati, spaziature diverse tra schermate costruite allo stesso modo, gerarchia, troncamenti, contrasto in modalità scura. Ogni osservazione indica l'immagine e il `file:line` che la disegna. Sono note di review, non un blocco: il confronto con immagini approvate lo fanno gli snapshot test (sotto).
+- Perché una finestra: `ImageRenderer` disegna un segnaposto per `List` e altri controlli basati su AppKit, e `NSView.cacheDisplay` perde il testo SwiftUI. La cattura dal window server mostra la schermata come la disegna l'app.
+
+Misurato su una piccola fixture, 3 esecuzioni per braccio ([risultati](tests/smoke/RESULTS.md)): i difetti inseriti nel codice sono stati trovati con e senza immagini; con le immagini il reviewer ha dato posizioni invece di ipotesi, non ha mai descritto male il layout e ha trovato un difetto di rendering che la review del solo codice ha mancato ogni volta.
+
+</details>
+
+<details>
+<summary><b>Visual regression con baseline approvate</b></summary>
+
+Un componente condiviso cambiato per una schermata può spostare tutte le altre che lo usano. I test del progetto confrontano ogni componente con immagini che hai approvato:
+
+```swift
+#expect(Snapshot.verify("PillView", sizes: ["320"], state: "long-text") { PillView(pill: .success(longTitle)) } == [])
+#expect(Snapshot.verify("PillView", sizes: ["320"], locale: "ar") { PillView(pill: .success("Added")) } == [])
+```
+
+- `Snapshot.verify` (copiato dal setup accanto a `Screenshot.swift`, da `templates/tests/Snapshot.swift`) disegna la view come gli screenshot, in chiaro e scuro, e confronta ogni immagine con la sua baseline in `snapshots/`. `locale:` imposta lingua e direzione del testo, così una gallery copre lingue lunghe e scrittura da destra a sinistra.
+- Un test non scrive mai una baseline. Un'immagine mancante o diversa fallisce e indica la zona cambiata ("85 of 151200 pixels differ, within x 96-110, y 118-126 pt"); la nuova immagine e una copia con i pixel cambiati in rosso restano in `.build/swift-harness/snapshots/`. Le guardi e le approvi con `/swift-harness:approve-snapshots`, che le copia in `snapshots/` da committare.
+- Claude non può sostituire una baseline in silenzio: il guard chiede conferma prima di un Edit o Write in `snapshots/`, e a fine turno vieni avvisato delle baseline cambiate senza approvazione, anche tramite comandi shell. In sessioni reali Claude ha lasciato l'approvazione all'utente anche quando gli è stato chiesto di aggiornare le baseline ([risultati](tests/smoke/RESULTS.md)).
+- Le baseline sono legate alla versione di macOS e alla scala del display su cui sono state fatte. Su un'altra versione un'immagine risulta non confrontata, mai uguale.
 
 </details>
 
@@ -204,6 +257,7 @@ Da Claude Code 2.1.275 le prime due righe diventano una: `/plugin install swift-
 - `verify.command`: qualsiasi comando; codice di uscita 0 significa verifica superata.
 - `verify.inputs`: file o cartelle coperti dall'approvazione oltre ai file che il comando nomina, per esempio uno script chiamato tra virgolette o tramite `make`.
 - `protectedPaths`: prefissi relativi alla radice del repository che richiedono conferma prima di un Edit o Write (`../` e symlink vengono risolti, anche quando la voce stessa è un symlink).
+- `layout.path`, `layout.enabled`: il contratto di layout (default `docs/LAYOUT_CONTRACT.md`) e il suo controllo a fine turno. `screenshots.path`: dove `Screenshot.capture` salva le immagini (default `.build/swift-harness/screenshots`). `snapshots.path`: le baseline approvate degli snapshot test, dentro il repository (default `snapshots`); solo `/swift-harness:approve-snapshots` ci scrive, e il guard chiede conferma prima di una modifica.
 - `registry.sources`: le cartelle del design system in cui cercare view, modifier e stili che mancano dal registro. `registry.path` cambia il file del registro (default `docs/COMPONENT_REGISTRY.md`), `registry.enabled: false` spegne il controllo.
 - `scripts/verify.sh` non dichiara mai PASS senza aver eseguito almeno un controllo: senza scheme né package fallisce con `NOT CONFIGURED`, e un package elencato ma inesistente è un fallimento.
 
@@ -211,16 +265,18 @@ La tabella completa delle opzioni è nel [README in inglese](README.md#configura
 
 ## Roadmap
 
-Prossima tappa: **v1.4.0, coerenza visiva.** Comportamento della finestra a ogni dimensione, design review sugli screenshot e visual regression dei componenti condivisi. Poi **v1.5.0, iOS e multipiattaforma**. Tutto nella [roadmap](ROADMAP.md).
+Prossima tappa: **v1.5.0, iOS e multipiattaforma**, con un audit di porting in sola lettura per le app macOS, poi **v1.6.0, porting assistito da macOS a iOS**. Tutto nella [roadmap](ROADMAP.md).
 
 ## Limiti
 
 - **L'approvazione del comando di verifica copre i file che il comando nomina, non tutto ciò che legge.** Il comando viene diviso sugli spazi, non interpretato come shell: con virgolette o sintassi shell e senza `verify.inputs`, l'approvazione risulta `approved, partial coverage` (anche in `/swift-harness:doctor`), ed elencare gli script in `verify.inputs` li copre. Un input fuori dal progetto, o una cartella con un link che porta fuori, non si può coprire, quindi l'approvazione viene rifiutata. Un `Makefile` dietro `make verify`, o uno script incluso con `source` da `verify.sh`, può cambiare senza una nuova approvazione. Approvare significa anche fidarsi della build del progetto (Run Script di Xcode, manifest e plugin di SwiftPM). Vedi [SECURITY.md](SECURITY.md).
 - **Il controllo del registro riguarda le voci, non il riuso.** Dimostra che ogni voce punta a una dichiarazione reale e trova view, modifier, layout e stili non elencati in `registry.sources`. Non decide se una view nuova duplica una esistente. Modificare solo il registro rifà anche la verifica veloce a fine turno, perché il registro fa parte dello stato controllato.
+- **Il contratto di layout misura lo spazio, non l'aspetto.** Dimostra che una schermata non chiede più spazio di quello che la finestra le dà a ogni dimensione, e che la finestra dichiara le sue dimensioni. Testo troncato, sovrapposizioni e popover che escono dalla finestra restano alla review. I test di misura non girano in un target di test ospitato da un'app sandboxed, che non può leggere `docs/`: usa un package o un target senza app ospite, oppure passa `contract:`. Per ora solo macOS; le size class di iOS arrivano con [#40](https://github.com/davidelarocca/swift-harness/issues/40).
+- **La review sugli screenshot è un giudizio, non un controllo.** Le immagini sono prove per il reviewer; una riga disallineata non fa fallire nulla. La cattura richiede una sessione con window server (Xcode, `swift test`, runner macOS di GitHub) e un target di test che possa leggere e scrivere il progetto: un'app ospite sandboxed non può, quindi usa un package o un target senza app ospite, oppure passa `sizes:`, `source:` e un `output:` scrivibile. Le immagini dipendono dalla versione di macOS e dalla scala del display. Per ora solo macOS.
 - **I contratti di architettura coprono solo i target SwiftPM.** Le dipendenze tra target Xcode, e gli import che la build permette tramite una dipendenza transitiva, non sono controllati.
 - **Il guard sui percorsi protetti non è una sandbox.** Copre solo i tool Edit, Write e MultiEdit; un comando shell eseguito via Bash può comunque modificare un file protetto. Per limiti rigidi usa le [regole di permesso](https://code.claude.com/docs/en/permissions) di Claude Code (`deny`).
 - I file Swift di riferimento della skill `design-system` sono esempi da adattare, non una libreria.
-- Gli snapshot test cambiano tra versioni di macOS: registrali ed eseguili sullo stesso sistema, e rigenerali dopo aggiornamenti importanti.
+- **Le baseline degli snapshot sono legate a una versione di macOS e a una scala del display.** Testo e controlli si disegnano diversamente su altre versioni, quindi su un Mac o un runner diverso le immagini risultano non confrontate, non superate: confronta sul Mac su cui sono state fatte (i runner di GitHub di solito hanno un macOS più vecchio). Su macOS `dynamicTypeSize` non cambia il disegno del testo SwiftUI, quindi il testo più grande è uno stato che il progetto disegna da sé. Focus, navigazione da tastiera e Riduci movimento non sono coperti dagli snapshot ([#52](https://github.com/davidelarocca/swift-harness/issues/52)).
 - Con Xcode 26, `swift build` e `swift test` copiano il catalogo degli asset di un package senza compilarlo, quindi in quei test i colori del design system non si trovano. Esegui i test che dipendono dai colori con `xcodebuild test`; Xcode 27 compila il catalogo in ogni caso.
 - **"Cambiato" è una lista di pattern di file, non il grafo della build.** In un progetto Xcode con cartelle sincronizzate, una risorsa di un tipo non elencato fuori da `Resources/` (per esempio `App/data.json`) non conta come modifica. Nemmeno una nuova versione di SwiftLint o di Xcode invalida una verifica superata: contano solo il codice e la versione del plugin.
 - La verifica a fine turno gira sulla tua macchina e dura quanto la tua verifica veloce: tieni `fast` sotto i due minuti circa.
