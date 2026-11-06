@@ -113,8 +113,8 @@ if [ -n "$SCHEME" ]; then
     printf 'xcodebuild not found: install Xcode or run xcode-select.\n'
     fail=1
   else
-    action=build
-    [ "$MODE" = "full" ] && action=test
+    action="build"
+    [ "$MODE" = "full" ] && action="test"
     for platform in "${PLATFORMS[@]}"; do
       step "xcodebuild $action ($SCHEME, $platform)"
       ran=$((ran + 1))
