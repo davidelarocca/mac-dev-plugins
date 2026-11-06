@@ -23,8 +23,13 @@ fi
 
 command_line="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
 max_attempts="$(sh_cfg '.verify.maxAttempts' '3')"
+# The verify command comes from the repository: run it only once the user approved it (#6).
+run_verify=false
+if [ "$verify_enabled" = "true" ]; then
+  sh_verify_approved "$command_line" "$state" && run_verify=true
+fi
 checks=""
-[ "$verify_enabled" = "true" ] && checks="$command_line"
+[ "$run_verify" = "true" ] && checks="$command_line"
 { [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ]; } && checks="${checks:+$checks + }SwiftLint (lintBlocking)"
 
 fp="$(sh_fingerprint)"
@@ -38,6 +43,19 @@ failures="${failures:-0}"
 warn_user() {
   jq -n --arg msg "$1" '{systemMessage: $msg}'
 }
+
+# Tell the user once per code state that the verify command did not run.
+warn_unapproved() {
+  [ "$verify_enabled" = "true" ] && [ "$run_verify" = "false" ] || return 0
+  [ "$fp" = "$(cat "$state/unapproved-warned" 2>/dev/null)" ] && return 0
+  printf '%s' "$fp" >"$state/unapproved-warned"
+  warn_user "swift-harness: the end-of-turn check did not run '$command_line', because this project's verify command is new or changed since you last approved it. These changes are not verified. Review the command and the files it runs, then type /swift-harness:approve-verify."
+}
+
+if [ -z "$checks" ]; then
+  warn_unapproved
+  exit 0
+fi
 
 # Re-lint the files that failed SwiftLint under lintBlocking. Prints the problems, keeps
 # only the files that still fail in the pending list, and returns 1 if any does.
@@ -77,9 +95,11 @@ fi
 
 out="$(mktemp -t swift-harness-verify.XXXXXX)"
 status=0
-if [ "$verify_enabled" = "true" ]; then
+if [ "$run_verify" = "true" ]; then
   (cd "$SH_ROOT" && bash -c "$command_line") >"$out" 2>&1
   status=$?
+elif [ "$verify_enabled" = "true" ]; then
+  printf '== %s ==\nNot run: the user has not approved this verify command yet (/swift-harness:approve-verify), so the build and tests were not checked. Do not run the approval yourself.\n' "$command_line" >>"$out"
 fi
 if [ "$lint_missing" = "true" ]; then
   printf '\n== SwiftLint (lintBlocking) ==\nSwiftLint is not installed, but lintBlocking is on: the Swift files changed in this session were not linted. Tell the user to install it (brew install swiftlint) or to turn lintBlocking off; do not try to work around it.\n' >>"$out"
@@ -90,9 +110,11 @@ elif [ "$lint_gate" = "true" ]; then
 fi
 
 if [ "$status" -eq 0 ]; then
-  printf '%s' "$fp" > "$state/passed"
+  # Without the verify command, a clean lint is not a passed verification.
+  [ "$verify_enabled" = "true" ] && [ "$run_verify" = "false" ] || printf '%s' "$fp" > "$state/passed"
   printf '0' > "$state/failures"
   rm -f "$state/failed" "$out"
+  warn_unapproved
   exit 0
 fi
 
