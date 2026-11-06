@@ -2,7 +2,7 @@
 
 Where swift-harness is going, and why. Live status is in the [milestones](https://github.com/davidelarocca/swift-harness/milestones) and [issues](https://github.com/davidelarocca/swift-harness/issues). This page is updated with every release.
 
-_Last updated: 6 November 2026, after v1.3.1 (screenshot review merged, porting planned)._
+_Last updated: 6 November 2026, after v1.3.1 (screenshot review merged, porting planned, Studio idea parked)._
 
 **Guiding principle:** every check the harness claims to run must actually run, and must be backed by a test. New features come after the existing gates are reliable, and claims about impact come with measurements.
 
@@ -42,6 +42,8 @@ The same harness for iOS, iPadOS and multiplatform Swift apps. Most of swift-har
 | ⏱️ | **Performance budget.** Key operations measured against recorded baselines in the full check; a regression fails with the numbers. Later, a skill that explains slowness with a trace. | [#33](https://github.com/davidelarocca/swift-harness/issues/33) |
 | 🔎 | **Detect protected-path changes made through Bash**, at the end-of-turn check. | [#11](https://github.com/davidelarocca/swift-harness/issues/11) |
 | 📊 | **v2.0.0: a measured harness.** Repeatable evals of Claude with and without swift-harness: reuse, regressions, build passes, cost. Published with method and raw data. | [#8](https://github.com/davidelarocca/swift-harness/issues/8) |
+
+Ideas parked until there is demand: a local, read-only view of the checks with evidence behind every edge and status ([#50](https://github.com/davidelarocca/swift-harness/discussions/50)); persistence migrations, localization, approval across worktrees, docs drift ([#38](https://github.com/davidelarocca/swift-harness/discussions/38)).
 
 ## Shipped
 
