@@ -90,12 +90,18 @@ sh_cfg() {
   [ -n "$value" ] && printf '%s' "$value" || printf '%s' "$2"
 }
 
-# Per-project state directory (survives plugin updates).
-sh_state_dir() {
+# Per-project state directory (survives plugin updates). sh_state_path only computes it,
+# for read-only callers such as doctor.sh; sh_state_dir also creates it.
+sh_state_path() {
   local base key
   base="${CLAUDE_PLUGIN_DATA:-$HOME/.cache/swift-harness}"
   key="$(printf '%s' "$SH_ROOT" | shasum | cut -c1-16)"
-  mkdir -p "$base/state/$key" && printf '%s' "$base/state/$key"
+  printf '%s' "$base/state/$key"
+}
+sh_state_dir() {
+  local dir
+  dir="$(sh_state_path)"
+  mkdir -p "$dir" && printf '%s' "$dir"
 }
 
 # Files that can change the result of a build or test run. Git pathspecs: "*" also matches "/".

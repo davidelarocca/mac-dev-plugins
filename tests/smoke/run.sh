@@ -25,7 +25,7 @@ TEMPLATES="$PLUGIN/skills/setup/templates"
 WORK="${SMOKE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/swift-harness-smoke.XXXXXX")}"
 WORK="$(mkdir -p "$WORK" && cd "$WORK" && pwd -P)"
 
-ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels lint-missing verify-unapproved"
+ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels lint-missing verify-unapproved approve-verify doctor"
 PLUGIN_DATA="${SMOKE_PLUGIN_DATA:-$HOME/.claude/plugins/data/swift-harness-inline}"
 
 for tool in claude swift swiftlint jq git; do
@@ -101,8 +101,8 @@ EOF
 
 # ---------- scenarios ----------
 # Each scenario_<name> sets CONFIG (swift-harness.json), TASK (prompt) and SETUP (shell
-# run in the repo before the session), and APPROVE=0 to leave the verify command
-# unapproved. Each check_<name> asserts invariants.
+# run in the repo before the session), APPROVE=0 to leave the verify command unapproved,
+# and EXTRA_TOOLS for more allowed tools. Each check_<name> asserts invariants.
 
 BASE_CONFIG='"format":"swift-format","lint":"swiftlint","verify":{"command":"scripts/verify.sh fast","maxAttempts":3}'
 FOUR_SPACES="printf '{\"version\":1,\"indentation\":{\"spaces\":4}}\n' > .swift-format"
@@ -226,6 +226,40 @@ check_verify_unapproved() {
   expect "Greeting.swift changed" file_has Sources/App/Greeting.swift '"Hi,'
 }
 
+# The skills pass ${CLAUDE_PLUGIN_DATA} to their scripts: these two prove it is the folder
+# the hooks use.
+PLUGIN_SCRIPTS="Bash(CLAUDE_PLUGIN_DATA=*)"
+
+scenario_approve_verify() {
+  CONFIG="{$BASE_CONFIG,\"lintBlocking\":false}"
+  TASK='/swift-harness:approve-verify'
+  SETUP="$FOUR_SPACES"
+  APPROVE=0
+  EXTRA_TOOLS="$PLUGIN_SCRIPTS"
+}
+check_approve_verify() {
+  expect "status shown before approving" tool_output_has 'Status: not approved'
+  expect "approved through the skill" tool_output_has 'Status: approved'
+  expect "the hooks see the approval" approved_for_hooks
+  expect "no file changed" unchanged .
+}
+
+scenario_doctor() {
+  CONFIG="{$BASE_CONFIG,\"lintBlocking\":false,\"lintBlok\":true}"
+  TASK='/swift-harness:doctor'
+  SETUP="$FOUR_SPACES; chmod -x scripts/verify.sh"
+  EXTRA_TOOLS="$PLUGIN_SCRIPTS"
+}
+check_doctor() {
+  expect "doctor table produced" tool_output_has '\| Status \| Check \| Detail \|'
+  expect "approval read from the hooks' data folder" tool_output_has '\| PASS \| Verify approval'
+  expect "non-executable verify script reported" tool_output_has '\| FAIL \| Verify script \|.*not executable'
+  expect "unknown key reported" tool_output_has 'lintBlok'
+  expect "no file changed (read-only)" unchanged .
+  expect "verify script still not executable" not_executable scripts/verify.sh
+  expect "Claude did not run the approval" not_ran 'approve-verify'
+}
+
 # ---------- checks ----------
 
 T=""   # transcript of the scenario being checked
@@ -261,6 +295,16 @@ not_ran() {
     | select(.type == "tool_use" and .name == "Bash") | .input.command // "" | select(test($re))]
     | length > 0' "$T" >/dev/null
 }
+# $1 regex that the output of some tool call must match
+tool_output_has() {
+  jq -se --arg re "$1" '[.[] | select(.type == "user") | .message.content[]?
+    | select(.type == "tool_result") | .content | if type == "array" then map(.text // "") | join("\n") else (. // "") end
+    | select(test($re))] | length > 0' "$T" >/dev/null
+}
+approved_for_hooks() {
+  CLAUDE_PLUGIN_DATA="$PLUGIN_DATA" "$PLUGIN/scripts/approve-verify.sh" --status "$D" | grep -q '^Status: approved'
+}
+not_executable() { [ -f "$D/$1" ] && [ ! -x "$D/$1" ]; }
 unchanged() { git -C "$D" diff --quiet HEAD -- "$1" && [ -z "$(git -C "$D" ls-files --others --exclude-standard -- "$1")" ]; }
 file_has() { [ -f "$D/$1" ] && grep -qE -- "$2" "$D/$1"; }
 
@@ -272,6 +316,7 @@ run_scenario() { # $1 name
   d="$WORK/$name"
   SESSION_ENV=""
   APPROVE=1
+  EXTRA_TOOLS=""
   "$fn"
   rm -rf "$d"
   git clone -q "$WORK/base" "$d"
@@ -292,7 +337,7 @@ run_scenario() { # $1 name
       --plugin-dir "$PLUGIN" --setting-sources project,local \
       --permission-mode acceptEdits \
       --allowedTools Read Glob Grep Edit Write "Bash(swift build:*)" "Bash(swift test:*)" \
-      "Bash(git status:*)" "Bash(git diff:*)" "Bash(scripts/verify.sh:*)" \
+      "Bash(git status:*)" "Bash(git diff:*)" "Bash(scripts/verify.sh:*)" ${EXTRA_TOOLS:+"$EXTRA_TOOLS"} \
       --output-format stream-json --verbose --include-hook-events --no-session-persistence \
       >"$WORK/$name.jsonl" 2>"$WORK/$name.err"
   )
