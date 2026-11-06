@@ -132,6 +132,18 @@ sh_registry_on() { [ "$(sh_cfg '.registry.enabled' 'true')" = "true" ] && [ -f "
 sh_layout() { local p; p="$(sh_cfg '.layout.path' 'docs/LAYOUT_CONTRACT.md')"; printf '%s' "${p#./}"; }
 sh_layout_on() { [ "$(sh_cfg '.layout.enabled' 'true')" = "true" ] && [ -f "$SH_ROOT/$(sh_layout)" ]; }
 
+# Approved snapshot baselines (#9): compared by the project's tests, written only by
+# /swift-harness:approve-snapshots. Part of the fingerprint: a changed baseline changes the
+# test result. New images wait in SH_SNAPSHOT_CANDIDATES.
+sh_snapshots() { local p; p="$(sh_cfg '.snapshots.path' 'snapshots')"; p="${p#./}"; printf '%s' "${p%/}"; }
+SH_SNAPSHOT_CANDIDATES=".build/swift-harness/snapshots"
+# "<sha256> <path>" for every file in the baselines folder, sorted, for snapshot-watch.sh.
+sh_snapshot_list() {
+  [ -d "$SH_ROOT/$1" ] || return 0
+  (cd "$SH_ROOT" && find "$1" -type f ! -name .DS_Store -print0 2>/dev/null | xargs -0 shasum -a 256 2>/dev/null) |
+    sed 's/  / /' | LC_ALL=C sort
+}
+
 # Plugin version, from the manifest next to these scripts.
 SH_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)"
 
@@ -149,8 +161,8 @@ sh_identity() {
 sh_fingerprint() {
   {
     git -C "$SH_ROOT" rev-parse HEAD 2>/dev/null
-    git -C "$SH_ROOT" diff HEAD -- "${SH_BUILD_INPUTS[@]}" "$(sh_registry)" "$(sh_layout)" 2>/dev/null
-    git -C "$SH_ROOT" ls-files -z --others --exclude-standard -- "${SH_BUILD_INPUTS[@]}" "$(sh_registry)" "$(sh_layout)" 2>/dev/null |
+    git -C "$SH_ROOT" diff HEAD -- "${SH_BUILD_INPUTS[@]}" "$(sh_registry)" "$(sh_layout)" "$(sh_snapshots)" 2>/dev/null
+    git -C "$SH_ROOT" ls-files -z --others --exclude-standard -- "${SH_BUILD_INPUTS[@]}" "$(sh_registry)" "$(sh_layout)" "$(sh_snapshots)" 2>/dev/null |
       while IFS= read -r -d '' f; do shasum "$SH_ROOT/$f" 2>/dev/null; done
   } | shasum | cut -d' ' -f1
 }

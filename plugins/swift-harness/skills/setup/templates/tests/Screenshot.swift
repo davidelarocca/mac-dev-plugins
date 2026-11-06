@@ -14,7 +14,7 @@
 // docs/LAYOUT_CONTRACT.md whose View is that name. For a component or a screen without a row,
 // pass the sizes: `Screenshot.capture("PillView", sizes: ["320x60"], source: "Sources/DS/Pill.swift")`.
 // A width alone ("320") takes the height the view needs. `state:` names a variant ("empty",
-// "long-text"). `source:` is the file that draws it, for the reviewer to tell a stale image;
+// "long-text"), `locale:` a language and its text direction ("de", "ar"). `source:` is the file that draws it, for the reviewer to tell a stale image;
 // it defaults to the File cell of the contract row. Each size is captured in light and dark.
 //
 // These are evidence for a review, not a regression test: nothing is compared with a
@@ -50,6 +50,7 @@ enum Screenshot {
         _ screen: String,
         sizes: [String]? = nil,
         state: String? = nil,
+        locale: String? = nil,
         source: String? = nil,
         contract: URL? = nil,
         output: URL? = nil,
@@ -57,35 +58,12 @@ enum Screenshot {
         @ViewBuilder _ make: () -> Content
     ) -> [String] {
         let testFolder = URL(fileURLWithPath: "\(file)").deletingLastPathComponent()
-        let url = contract ?? LayoutContract.locate(from: testFolder)
-        let text = url.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
-        let row = text.flatMap { LayoutContract.rows(in: $0) }?.first { $0.view == screen }
-        let source = source ?? text.flatMap { text in row.map { cell(text, line: $0.line, column: "file") } } ?? ""
-        let cells: [String]
-        if let sizes {
-            cells = sizes
-        } else {
-            guard let url else {
-                return ["No layout contract found above \(file) to read \(screen)'s sizes: pass sizes:, or add docs/LAYOUT_CONTRACT.md."]
-            }
-            guard let text else {
-                return ["Cannot read the layout contract at \(url.path). A test target hosted by a sandboxed app cannot read the project: capture in a test target without a host app, or pass sizes: (and source:, output:)."]
-            }
-            guard LayoutContract.rows(in: text) != nil else {
-                return ["\(url.lastPathComponent) has no \"## Screens\" table with View and Min columns."]
-            }
-            guard let row else {
-                return ["\(url.lastPathComponent) has no row with \(screen) as View: add one, or pass sizes:."]
-            }
-            cells = [row.min, row.defaultSize]
+        let plan: Plan
+        switch self.plan(screen, sizes: sizes, source: source, contract: contract, file: file) {
+        case .failure(let failure): return [failure.description]
+        case .success(let value): plan = value
         }
-
-        var sizes: [LayoutContract.Size] = []
-        for text in cells {
-            guard let parsed = LayoutContract.size(text) else { return ["\(screen): '\(text)' is not a size."] }
-            if let size = parsed, !sizes.contains(size) { sizes.append(size) }
-        }
-        guard !sizes.isEmpty else { return ["\(screen): no size to capture."] }
+        let sizes = plan.sizes, source = plan.source
 
         guard let folder = output ?? folder(from: testFolder) else {
             return ["No project root found above \(file): pass output:."]
@@ -97,12 +75,12 @@ enum Screenshot {
         }
 
         _ = NSApplication.shared
-        let content = make()
+        let content = localized(make(), locale)
         var problems: [String] = []
         for size in sizes {
             for dark in [false, true] {
                 let appearance = dark ? "dark" : "light"
-                let base = [screen, state, platform, size.text, appearance].compactMap { $0 }.joined(separator: "-")
+                let base = name(screen, state: state, locale: locale, size: size, appearance: appearance)
                 let png = folder.appendingPathComponent("\(base).png")
                 switch render(content, size: size, dark: dark) {
                 case .failure(let reason):
@@ -116,6 +94,7 @@ enum Screenshot {
                     let info: [String: Any] = [
                         "screen": screen,
                         "state": state ?? "",
+                        "locale": locale ?? "",
                         "platform": platform,
                         "size": "\(LayoutContract.Size.number(points.width))x\(LayoutContract.Size.number(points.height))",
                         "contractSize": size.text,
@@ -138,6 +117,61 @@ enum Screenshot {
             }
         }
         return problems
+    }
+
+    struct Plan {
+        var sizes: [LayoutContract.Size]
+        var source: String
+    }
+
+    /// The sizes to capture (given, or Min and Default from the screen's contract row) and the
+    /// source file that draws the screen.
+    static func plan(_ screen: String, sizes: [String]?, source: String?, contract: URL?, file: StaticString) -> Result<Plan, Failure> {
+        let testFolder = URL(fileURLWithPath: "\(file)").deletingLastPathComponent()
+        let url = contract ?? LayoutContract.locate(from: testFolder)
+        let text = url.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        let row = text.flatMap { LayoutContract.rows(in: $0) }?.first { $0.view == screen }
+        let source = source ?? text.flatMap { text in row.map { cell(text, line: $0.line, column: "file") } } ?? ""
+        let cells: [String]
+        if let sizes {
+            cells = sizes
+        } else {
+            guard let url else {
+                return .failure(Failure("No layout contract found above \(file) to read \(screen)'s sizes: pass sizes:, or add docs/LAYOUT_CONTRACT.md."))
+            }
+            guard let text else {
+                return .failure(Failure("Cannot read the layout contract at \(url.path). A test target hosted by a sandboxed app cannot read the project: capture in a test target without a host app, or pass sizes: (and source:, output:)."))
+            }
+            guard LayoutContract.rows(in: text) != nil else {
+                return .failure(Failure("\(url.lastPathComponent) has no \"## Screens\" table with View and Min columns."))
+            }
+            guard let row else {
+                return .failure(Failure("\(url.lastPathComponent) has no row with \(screen) as View: add one, or pass sizes:."))
+            }
+            cells = [row.min, row.defaultSize]
+        }
+        var sizes: [LayoutContract.Size] = []
+        for text in cells {
+            guard let parsed = LayoutContract.size(text) else { return .failure(Failure("\(screen): '\(text)' is not a size.")) }
+            if let size = parsed, !sizes.contains(size) { sizes.append(size) }
+        }
+        guard !sizes.isEmpty else { return .failure(Failure("\(screen): no size to capture.")) }
+        return .success(Plan(sizes: sizes, source: source))
+    }
+
+    /// The file name, without extension, of one image.
+    static func name(_ screen: String, state: String?, locale: String?, size: LayoutContract.Size, appearance: String) -> String {
+        [screen, state, locale, platform, size.text, appearance].compactMap { $0 }.joined(separator: "-")
+    }
+
+    /// The view in a locale, with its text direction: localized strings, dates and numbers, and
+    /// a right-to-left layout for languages such as Arabic and Hebrew.
+    static func localized<Content: View>(_ content: Content, _ locale: String?) -> AnyView {
+        guard let locale else { return AnyView(content) }
+        let rightToLeft = Locale.Language(identifier: locale).characterDirection == .rightToLeft
+        return AnyView(content
+            .environment(\.locale, Locale(identifier: locale))
+            .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight))
     }
 
     @MainActor
@@ -213,19 +247,25 @@ enum Screenshot {
     /// .build/swift-harness/screenshots in the first folder above it with docs/LAYOUT_CONTRACT.md
     /// or .git.
     static func folder(from start: URL) -> URL? {
+        guard let (root, config) = root(from: start) else { return nil }
+        let shots = config?["screenshots"] as? [String: Any]
+        return root.appendingPathComponent((shots?["path"] as? String) ?? ".build/swift-harness/screenshots")
+    }
+
+    /// The project root above `start`: the first folder with .claude/swift-harness.json (and
+    /// its contents), docs/LAYOUT_CONTRACT.md or .git.
+    static func root(from start: URL) -> (URL, [String: Any]?)? {
         let files = FileManager.default
-        let fallback = ".build/swift-harness/screenshots"
         var dir = start.standardizedFileURL
         while true {
             let config = dir.appendingPathComponent(".claude/swift-harness.json")
             if let data = try? Data(contentsOf: config),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                let shots = json["screenshots"] as? [String: Any]
-                return dir.appendingPathComponent((shots?["path"] as? String) ?? fallback)
+                return (dir, json)
             }
             if files.fileExists(atPath: dir.appendingPathComponent("docs/LAYOUT_CONTRACT.md").path)
                 || files.fileExists(atPath: dir.appendingPathComponent(".git").path) {
-                return dir.appendingPathComponent(fallback)
+                return (dir, nil)
             }
             let parent = dir.deletingLastPathComponent()
             if parent.path == dir.path { return nil }

@@ -1744,6 +1744,127 @@ out="$(doctor "$L")"
 expect_row "doctor: a wrong screenshots.path fails the config" "$out" FAIL Config 'screenshots.path must be a path'
 expect_row "doctor: an unknown screenshots key warns" "$out" WARN 'Config keys' 'screenshots.pth'
 
+# ---------- snapshot baselines (#9) ----------
+# The comparison itself runs on the Swift fixture tests/fixtures/visual (locally and in CI).
+# Here: approving new images, the guard, the end-of-turn notice, the fingerprint and doctor.
+
+if grep -qF '| `tests/Snapshot.swift` |' "$SKILLS/setup/SKILL.md"; then ok "snapshots: setup installs the snapshot helper"
+else nok "snapshots: setup installs the snapshot helper"; fi
+if [ "$(readlink "$HERE/fixtures/visual/Tests/ScreensTests/Snapshot.swift")" = "../../../../../plugins/swift-harness/skills/setup/templates/tests/Snapshot.swift" ]; then
+  ok "snapshots: the Swift fixture compares with the template helper itself"
+else nok "snapshots: the Swift fixture compares with the template helper itself"; fi
+if grep -qx 'disable-model-invocation: true' "$SKILLS/approve-snapshots/SKILL.md"; then ok "snapshots: only the user runs approve-snapshots"
+else nok "snapshots: only the user runs approve-snapshots"; fi
+if grep -qF '/swift-harness:approve-snapshots' "$TEMPLATES/tests/Snapshot.swift" &&
+  grep -qF '.build/swift-harness/snapshots' "$TEMPLATES/tests/Snapshot.swift" &&
+  grep -qF 'SH_SNAPSHOT_CANDIDATES=".build/swift-harness/snapshots"' "$SCRIPTS/lib.sh"; then
+  ok "snapshots: the helper and the approval use the same folders"
+else nok "snapshots: the helper and the approval use the same folders"; fi
+if jq -e '[.hooks.Stop[].hooks[].command] | any(test("snapshot-watch.sh"))' "$PLUGIN/hooks/hooks.json" >/dev/null; then
+  ok "snapshots: the end-of-turn notice is a Stop hook"
+else nok "snapshots: the end-of-turn notice is a Stop hook"; fi
+
+snap() { # snapshots.sh arguments; prints "exit=<code>" then the output
+  local out code
+  out="$(CLAUDE_PLUGIN_DATA="$TMP/data" "$SCRIPTS/snapshots.sh" "$@" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+snap_digest() { CLAUDE_PLUGIN_DATA="$TMP/data" "$SCRIPTS/snapshots.sh" --status --project "$1" | sed -n 's/^Digest: //p'; }
+# A new image as the test helper leaves it: $1 project, $2 name, $3 status, $4 content.
+candidate() {
+  local c="$1/.build/swift-harness/snapshots"
+  mkdir -p "$c"
+  printf '%s' "$4" >"$c/$2.png"
+  printf '{"os": "%s", "scale": 2}\n' "$THIS_OS" >"$c/$2.json"
+  [ "$3" = failed ] && printf 'diff' >"$c/$2.diff.png"
+  printf '{"status": "%s", "reason": "%s: reason"}\n' "$3" "$2" >"$c/$2.result.json"
+}
+THIS_OS="$(sw_vers -productVersion | cut -d. -f1-2)"
+case "$THIS_OS" in *.*) ;; *) THIS_OS="$THIS_OS.0" ;; esac
+
+S="$(new_project snapshots)"
+out="$(snap --status --project "$S")"
+expect_result "snapshots: nothing waiting is said plainly" 0 'No new images wait' "$out"
+candidate "$S" Pill-macos-120-light missing new-pill
+candidate "$S" Card-macos-200-dark failed new-card
+candidate "$S" Row-macos-200-light passed same
+rm -f "$S/.build/swift-harness/snapshots/Row-macos-200-light.png"
+out="$(snap --status --project "$S")"
+expect_result "snapshots: status lists the missing and different images" 0 'Card-macos-200-dark: failed.*Pill-macos-120-light: missing' "$(head -1 <<<"$out")
+$(tail -n +2 <<<"$out" | tr '\n' ' ')" 'Row-macos'
+expect_result "snapshots: status shows the diff image" 0 'Changes in red: .*Card-macos-200-dark\.diff\.png' "$out"
+expect_result "snapshots: status ends with a digest" 0 '^Digest: [0-9a-f]{64}$' "$out"
+expect_result "snapshots: a wrong digest approves nothing" 1 'Nothing approved' "$(snap --approve 0000 --project "$S")"
+[ ! -e "$S/snapshots" ] && ok "snapshots: nothing is written when the approval is refused" || nok "snapshots: nothing is written when the approval is refused"
+d="$(snap_digest "$S")"
+expect_result "snapshots: an image not waiting cannot be approved" 1 "'Gone' is not waiting" "$(snap --approve "$d" --project "$S" Gone)"
+out="$(snap --approve "$d" --project "$S" Card-macos-200-dark)"
+expect_result "snapshots: approving one image copies it into snapshots/" 0 'Approved: snapshots/Card-macos-200-dark\.png \(failed\)' "$out" 'Pill'
+if [ "$(cat "$S/snapshots/Card-macos-200-dark.png")" = new-card ] && jq -e '.approved and .os' "$S/snapshots/Card-macos-200-dark.json" >/dev/null &&
+  [ ! -e "$S/.build/swift-harness/snapshots/Card-macos-200-dark.png" ] && [ ! -e "$S/.build/swift-harness/snapshots/Card-macos-200-dark.diff.png" ] &&
+  [ -e "$S/.build/swift-harness/snapshots/Pill-macos-120-light.png" ]; then
+  ok "snapshots: the approved image and its metadata are copied, the rest still waits"
+else nok "snapshots: the approved image and its metadata are copied, the rest still waits" "$(ls -R "$S/snapshots" "$S/.build/swift-harness/snapshots" 2>&1)"; fi
+expect_result "snapshots: an old digest is refused after a partial approval" 1 'Nothing approved' "$(snap --approve "$d" --project "$S")"
+expect_result "snapshots: approving needs the plugin data folder" 1 'CLAUDE_PLUGIN_DATA is not set' \
+  "$(out="$(CLAUDE_PLUGIN_DATA='' "$SCRIPTS/snapshots.sh" --status --project "$S" 2>&1)"; printf 'exit=%s\n%s' $? "$out")"
+set_config "$S" '{"snapshots":{"path":"../outside"}}'
+expect_result "snapshots: a baselines folder outside the project is refused" 1 'inside the project' "$(snap --status --project "$S")"
+set_config "$S" '{"snapshots":{"path":"Tests/Baselines"}}'
+out="$(snap --approve "$(snap_digest "$S")" --project "$S")"
+expect_result "snapshots: snapshots.path is where images are approved" 0 'Approved: Tests/Baselines/Pill-macos-120-light\.png' "$out"
+set_config "$S" '{}'
+
+# Guard: Edit and Write in the baselines folder ask.
+expect_ask "$S" "$S/snapshots/Card-macos-200-dark.png" "guard: a snapshot baseline edit asks"
+expect_no_ask "$S" "$S/snapshots-old/x.png" "guard: a folder sharing the baselines prefix does not ask"
+set_config "$S" '{"snapshots":{"path":"Tests/Baselines/"}}'
+expect_ask "$S" "$S/Tests/Baselines/New.png" "guard: snapshots.path is protected"
+set_config "$S" '{}'
+
+# End of turn: baselines changed without the approval are shown to the user.
+git -C "$S" add -A && git -C "$S" commit -qm baselines
+swatch() { # $1 project
+  local out code
+  out="$(hook snapshot-watch.sh "$1" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+hook session-start.sh "$S" '{"source":"startup"}' >/dev/null
+expect_result "snapshot-watch: unchanged baselines say nothing" 0 '^exit=0$' "$(swatch "$S")"
+candidate "$S" Pill-macos-120-light failed newer-pill
+expect_result "snapshot-watch: an approved change says nothing" 0 '^exit=0$' \
+  "$(snap --approve "$(snap_digest "$S")" --project "$S" >/dev/null; swatch "$S")"
+printf 'copied by hand' >"$S/snapshots/Card-macos-200-dark.png"
+printf 'new' >"$S/snapshots/Extra-macos-80-light.png"
+out="$(swatch "$S")"
+expect_result "snapshot-watch: a baseline replaced without approval is shown" 0 'systemMessage.*without /swift-harness:approve-snapshots.*changed: snapshots/Card-macos-200-dark\.png' "$out"
+expect_result "snapshot-watch: a baseline added without approval is shown" 0 'changed: snapshots/Extra-macos-80-light\.png' "$out" 'Pill-macos-120-light'
+expect_result "snapshot-watch: the same change is shown once" 0 '^exit=0$' "$(swatch "$S")"
+rm "$S/snapshots/Card-macos-200-dark.json"
+expect_result "snapshot-watch: a deleted baseline is shown" 0 'deleted: snapshots/Card-macos-200-dark\.json' "$(swatch "$S")"
+git -C "$S" checkout -q -- snapshots && rm -f "$S/snapshots/Extra-macos-80-light.png"
+
+before="$(fingerprint "$S")"
+printf 'changed' >"$S/snapshots/Card-macos-200-dark.png"
+[ "$before" != "$(fingerprint "$S")" ] && ok "fingerprint: a changed baseline is a change to verify" || nok "fingerprint: a changed baseline is a change to verify"
+git -C "$S" checkout -q -- snapshots
+
+# Doctor.
+expect_row "doctor: baselines made on this macOS pass" "$(doctor "$S")" PASS 'Snapshot baselines' "made on macOS $THIS_OS, compared on this Mac"
+jq '.os = "13.9"' "$S/snapshots/Card-macos-200-dark.json" >"$TMP/sj" && mv "$TMP/sj" "$S/snapshots/Card-macos-200-dark.json"
+expect_row "doctor: baselines from another macOS are not compared here" "$(doctor "$S")" WARN 'Snapshot baselines' 'not compared'
+git -C "$S" checkout -q -- snapshots
+candidate "$S" Badge-macos-80-light missing x
+expect_row "doctor: new images waiting are pointed out" "$(doctor "$S")" WARN 'Snapshot baselines' '1 new image\(s\).*approve-snapshots'
+rm -rf "$S/snapshots"
+expect_row "doctor: no baselines is info" "$(doctor "$S")" INFO 'Snapshot baselines' 'none'
+set_config "$S" '{"snapshots":{"path":"../x","pth":1}}'
+out="$(doctor "$S")"
+expect_row "doctor: a baselines folder outside the project fails the config" "$out" FAIL Config 'snapshots.path must be a folder inside the project'
+expect_row "doctor: an unknown snapshots key warns" "$out" WARN 'Config keys' 'snapshots.pth'
+
 # ---------- summary ----------
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"

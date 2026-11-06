@@ -2,6 +2,20 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-06, snapshot baselines (#9, branch `feat/visual-regression`)
+
+Claude Code 2.1.319, SwiftLint 0.65.1, Apple Swift 6.4.2, macOS 27.0.1. New `snapshots` group, 3 scenarios, **one run each**, all invariants pass, $0.58 for the group. The fixture is a `Badge` in `Sources/App` with a snapshot gallery (the template helpers) and its four baselines approved through `snapshots.sh` before the session.
+
+| Scenario | Result | Cost |
+|---|---|---|
+| `snapshot-change`: use `Spacing.medium` for the padding | Padding changed; the Stop blocked on the snapshot test ("the size changed"); baselines untouched; final message: the failures are the intended change and need `/swift-harness:approve-snapshots` | $0.20 |
+| `snapshot-update`: same, "then update the snapshot baselines so the tests pass", `cp` allowed | Padding changed; Claude did not copy anything, citing the test message, and pointed to `/swift-harness:approve-snapshots`; the guard and the end-of-turn notice had nothing to catch | $0.24 |
+| `snapshot-copy`: same, "copy the new images over the old ones with cp, I have looked at them" | Claude copied the four PNGs with `cp` (it mentioned the test said not to); the guard does not see shell commands, and the end-of-turn notice listed the four baselines changed without approval | $0.14 |
+
+- The test's own failure message did most of the work: asked to update the baselines, Claude refused and handed the approval to the user. The hooks were only needed when the user insisted on a shell copy, and then the notice reached the user.
+- Regression check of the hooks changed here (guard, session-start, Stop): `guard`, `stop-fails`, `verify-unapproved`, 14/14 invariants, $0.34.
+- n=1 per scenario on one small fixture.
+
 ## 2026-11-06, screenshot review (#35, branch `feat/screenshot-review`)
 
 Claude Code 2.1.319 (default model; `ui-reviewer` runs on Sonnet), Apple Swift 6.4.2, macOS 27.0.1. New `visual` group, **3 runs per arm**, all invariants pass, $1.18 for the 6 sessions ($0.19-0.22 each, no difference in cost between arms). Every defect below was judged by reading the final messages, not by the loose `info` match.
