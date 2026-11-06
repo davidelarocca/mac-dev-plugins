@@ -11,6 +11,7 @@
 #
 # Usage: tests/smoke/run.sh [scenario ...]     (default: all but the reuse group)
 #        tests/smoke/run.sh reuse              (the UI reuse scenarios and their baselines)
+#        tests/smoke/run.sh product            (the product map scenarios and their baseline)
 #   SMOKE_DIR=<dir>    where repos and transcripts go (default: a new temp dir)
 #   SMOKE_MODEL=<id>   model for the sessions (default: Claude Code's default)
 #   SMOKE_CHECK_ONLY=1 only re-check the transcripts and repos already in SMOKE_DIR
@@ -30,6 +31,9 @@ ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation c
 # Reuse of UI components (the skills, not the hooks), each with a baseline without the
 # plugin. Not in the default run: about $2 for the group. Run with `run.sh reuse`.
 REUSE_SCENARIOS="reuse-toast reuse-toast-bare reuse-toast-nocaller reuse-toast-nocaller-bare reuse-toast-undo reuse-toast-undo-bare"
+# Product coherence (#30): an entity shown in a new place keeps its links and actions.
+# Not in the default run: about $1 for the group. Run with `run.sh product`.
+PRODUCT_SCENARIOS="product-map product-map-empty product-map-bare"
 PLUGIN_DATA="${SMOKE_PLUGIN_DATA:-$HOME/.claude/plugins/data/swift-harness-inline}"
 
 for tool in claude swift swiftlint jq git; do
@@ -453,6 +457,268 @@ scenario_reuse_toast_undo_bare() {
 }
 check_reuse_toast_undo_bare() { check_reuse_toast_undo; }
 
+# Product coherence: Claude shows an entity in a new place. The app has projects and
+# tasks, a navigator that opens each one's page, and a shared task context menu; the
+# project page and the task page already use them. The task asks for a "Due Today" list
+# on Home without saying how rows behave. Expected, per the product map rules: rows open
+# the task, the project name opens the project, rows offer the shared task actions.
+# product-map has a filled docs/PRODUCT_MAP.md; product-map-empty has the empty template
+# that setup leaves before /swift-harness:product-map runs; product-map-bare has no
+# plugin and no docs, as a baseline.
+PRODUCT_TASK='On the Home screen (Sources/App/HomeView.swift), add a "Due Today" section that lists the tasks due today, each with its title and the name of its project.'
+
+pm_app() {
+  cat >Sources/App/Model.swift <<'EOF'
+import Foundation
+import Observation
+
+public struct Project: Identifiable, Hashable {
+    public let id: UUID
+    public var name: String
+}
+
+public struct TaskItem: Identifiable, Hashable {
+    public let id: UUID
+    public var title: String
+    public var projectID: UUID
+    public var due: Date?
+    public var isDone = false
+}
+
+@MainActor @Observable
+public final class Store {
+    public var projects: [Project] = []
+    public var tasks: [TaskItem] = []
+
+    public init() {}
+
+    public func project(_ id: UUID) -> Project? { projects.first { $0.id == id } }
+    public func task(_ id: UUID) -> TaskItem? { tasks.first { $0.id == id } }
+    public func tasks(in project: UUID) -> [TaskItem] { tasks.filter { $0.projectID == project } }
+
+    public func toggleDone(_ id: UUID) {
+        guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
+        tasks[index].isDone.toggle()
+    }
+
+    public func duplicate(_ id: UUID) {
+        guard var copy = task(id) else { return }
+        copy = TaskItem(id: UUID(), title: copy.title, projectID: copy.projectID, due: copy.due)
+        tasks.append(copy)
+    }
+
+    public func delete(_ id: UUID) {
+        tasks.removeAll { $0.id == id }
+    }
+}
+EOF
+  cat >Sources/App/Navigator.swift <<'EOF'
+import Foundation
+import Observation
+
+public enum Destination: Hashable {
+    case project(UUID)
+    case task(UUID)
+}
+
+/// The one way to open an entity's page.
+@MainActor @Observable
+public final class Navigator {
+    public var path: [Destination] = []
+
+    public init() {}
+
+    public func open(_ destination: Destination) {
+        path.append(destination)
+    }
+}
+EOF
+  cat >Sources/App/TaskActionsMenu.swift <<'EOF'
+import SwiftUI
+
+/// The actions a task offers wherever it appears. Use as a context menu.
+struct TaskActionsMenu: View {
+    @Environment(Store.self) private var store
+    @Environment(Navigator.self) private var navigator
+    let task: TaskItem
+
+    var body: some View {
+        Button("Open Task") { navigator.open(.task(task.id)) }
+        Button("Show Project") { navigator.open(.project(task.projectID)) }
+        Divider()
+        Button(task.isDone ? "Mark as Not Done" : "Mark as Done") { store.toggleDone(task.id) }
+        Button("Duplicate") { store.duplicate(task.id) }
+        Button("Delete", role: .destructive) { store.delete(task.id) }
+    }
+}
+EOF
+  cat >Sources/App/RootView.swift <<'EOF'
+import SwiftUI
+
+public struct RootView: View {
+    @State private var store = Store()
+    @State private var navigator = Navigator()
+
+    public init() {}
+
+    public var body: some View {
+        NavigationStack(path: $navigator.path) {
+            HomeView()
+                .navigationDestination(for: Destination.self) { destination in
+                    switch destination {
+                    case .project(let id): ProjectView(projectID: id)
+                    case .task(let id): TaskDetailView(taskID: id)
+                    }
+                }
+        }
+        .environment(store)
+        .environment(navigator)
+    }
+}
+EOF
+  cat >Sources/App/HomeView.swift <<'EOF'
+import DesignSystem
+import SwiftUI
+
+struct HomeView: View {
+    @Environment(Store.self) private var store
+    @Environment(Navigator.self) private var navigator
+
+    var body: some View {
+        List {
+            Section("Projects") {
+                ForEach(store.projects) { project in
+                    Button(project.name) { navigator.open(.project(project.id)) }
+                        .buttonStyle(.plain)
+                }
+            }
+        }
+        .navigationTitle("Home")
+    }
+}
+EOF
+  cat >Sources/App/ProjectView.swift <<'EOF'
+import DesignSystem
+import SwiftUI
+
+struct ProjectView: View {
+    @Environment(Store.self) private var store
+    @Environment(Navigator.self) private var navigator
+    let projectID: UUID
+
+    var body: some View {
+        List(store.tasks(in: projectID)) { task in
+            Button {
+                navigator.open(.task(task.id))
+            } label: {
+                Label(task.title, systemImage: task.isDone ? "checkmark.circle.fill" : "circle")
+            }
+            .buttonStyle(.plain)
+            .contextMenu { TaskActionsMenu(task: task) }
+        }
+        .navigationTitle(store.project(projectID)?.name ?? "Project")
+    }
+}
+EOF
+  cat >Sources/App/TaskDetailView.swift <<'EOF'
+import DesignSystem
+import SwiftUI
+
+struct TaskDetailView: View {
+    @Environment(Store.self) private var store
+    @Environment(Navigator.self) private var navigator
+    let taskID: UUID
+
+    var body: some View {
+        if let task = store.task(taskID) {
+            VStack(alignment: .leading, spacing: Spacing.medium) {
+                Text(task.title).font(.title)
+                if let project = store.project(task.projectID) {
+                    Button(project.name) { navigator.open(.project(project.id)) }
+                        .buttonStyle(.link)
+                }
+                if let due = task.due {
+                    Text(due, style: .date)
+                }
+            }
+            .padding(Spacing.large)
+        }
+    }
+}
+EOF
+}
+
+# Words: "docs" adds what /swift-harness:setup leaves in the project; "map" fills the
+# product map the way /swift-harness:product-map would.
+product_fixture() {
+  local t="$TEMPLATES"
+  pm_app
+  case " $* " in *" docs "*) ;; *) return 0 ;; esac
+  mkdir -p docs .claude/rules
+  sed -e 's|{{APP_NAME}}|Smoke|' -e 's|{{ONE_LINE_DESCRIPTION}}|A small task manager for macOS.|' \
+    -e 's|{{FORMAT_COMMAND}}|`swift format --in-place --recursive Sources`|' \
+    -e 's|{{DESIGN_SYSTEM_PATH}}|Sources/DesignSystem/|' -e 's|{{PROTECTED_AREA_NAME}}|the audio engine|' \
+    -e 's|{{PROTECTED_PATHS}}|`Sources/Audio/`|' -e 's|{{PBXPROJ_NOTE}}||' "$t/CLAUDE.md" >CLAUDE.md
+  sed -e 's|{{APP_NAME}}|Smoke|' -e 's|{{DESIGN_SYSTEM_PATH}}|Sources/DesignSystem/|' \
+    -e 's|{{GALLERY_LOCATION}}|Xcode previews|' "$t/docs/DESIGN_SYSTEM.md" >docs/DESIGN_SYSTEM.md
+  sed 's|{{[A-Z_]*}}|see the code|g' "$t/docs/ARCHITECTURE.md" >docs/ARCHITECTURE.md
+  sed 's#^| UI-001 |.*#| UI-001 | TaskActionsMenu | The actions a task offers | Context menu of any view showing a task | | `.contextMenu { TaskActionsMenu(task: task) }` | Sources/App/TaskActionsMenu.swift | ProjectView | none |#' \
+    "$t/docs/COMPONENT_REGISTRY.md" >docs/COMPONENT_REGISTRY.md
+  sed 's|{{STATE_PATTERN}}|@Observable models injected through the environment|' "$t/rules/architecture.md" >.claude/rules/architecture.md
+  sed 's|{{DESIGN_SYSTEM_GLOB}}|Sources/DesignSystem/**|' "$t/rules/design-system.md" >.claude/rules/design-system.md
+  sed 's|{{FEATURES_GLOB}}|Sources/App/**|' "$t/rules/ui-features.md" >.claude/rules/ui-features.md
+  cp "$t/docs/PRODUCT_MAP.md" docs/PRODUCT_MAP.md
+  case " $* " in *" map "*) ;; *) return 0 ;; esac
+  awk '
+    /^\| \| `File.swift:line`/ {
+      print "| Project | `Model.swift:4` | `ProjectView` (`ProjectView.swift:4`) | `navigator.open(.project(id))` |"
+      print "| Task | `Model.swift:9` | `TaskDetailView` (`TaskDetailView.swift:4`) | `navigator.open(.task(id))` |"
+      next }
+    /^\| From \| To \|/ { print; getline; print
+      print "| Task | Project | belongs to | `TaskDetailView.swift:14`, `TaskActionsMenu.swift:11` |"
+      next }
+    /^\| Entity \| Where/ { print; getline; print
+      print "| Project | Home, Projects section (`HomeView.swift:11`) | ✓ click | n/a | n/a |"
+      print "| Task | Project page rows (`ProjectView.swift:10`) | ✓ click | ✓ menu | ✓ `TaskActionsMenu` |"
+      print "| Task | Task page header (`TaskDetailView.swift:12`) | n/a | ✓ project name is a link | — |"
+      next }
+    /^\| \| Open, Rename/ {
+      print "| Task | Open Task, Show Project, Mark as Done, Duplicate, Delete | `TaskActionsMenu` (`TaskActionsMenu.swift:4`), as a context menu |"
+      next }
+    { print }
+  ' docs/PRODUCT_MAP.md >docs/PRODUCT_MAP.tmp && mv docs/PRODUCT_MAP.tmp docs/PRODUCT_MAP.md
+}
+
+scenario_product_map() {
+  CONFIG="{$BASE_CONFIG,\"lintBlocking\":false}"
+  TASK="$PRODUCT_TASK"
+  SETUP="$FOUR_SPACES; product_fixture docs map"
+}
+check_product_map() {
+  expect "rows open the task" added_has 'open\(\.task\('
+  expect "project name opens the project" added_has 'open\(\.project\('
+  expect "rows offer the shared task actions" added_has 'TaskActionsMenu\('
+  expect "no second task menu" not_added 'struct [A-Za-z]*(Menu|Actions)[A-Za-z]* *: *View'
+  expect "product map updated with the new appearance, if the project has one" map_updated
+  expect "build and tests pass" verifies
+  note "ui-change skill loaded" used_skill 'ui-change'
+}
+
+scenario_product_map_empty() {
+  scenario_product_map
+  SETUP="$FOUR_SPACES; product_fixture docs"
+}
+check_product_map_empty() { check_product_map; }
+
+scenario_product_map_bare() {
+  CONFIG=""
+  TASK="$PRODUCT_TASK"
+  SETUP="$FOUR_SPACES; product_fixture"
+  PLUGIN_OFF=1
+  APPROVE=0
+}
+check_product_map_bare() { check_product_map; }
+
 # ---------- checks ----------
 
 T=""   # transcript of the scenario being checked
@@ -524,6 +790,9 @@ not_added() { ! added_has "$@"; }
 ds_change_documented() { # passes in projects without a registry (baselines)
   unchanged Sources/DesignSystem || [ ! -f "$D/docs/COMPONENT_REGISTRY.md" ] || ! unchanged docs/COMPONENT_REGISTRY.md
 }
+map_updated() { # passes in projects without a product map (baseline)
+  [ ! -f "$D/docs/PRODUCT_MAP.md" ] || ! unchanged docs/PRODUCT_MAP.md
+}
 verifies() { (cd "$D" && scripts/verify.sh fast >/dev/null 2>&1); }
 used_skill() {
   jq -se --arg re "$1" '[.[] | select(.type == "assistant") | .message.content[]?
@@ -571,6 +840,7 @@ run_scenario() { # $1 name
 
 scenarios="${*:-$ALL_SCENARIOS}"
 [ "$scenarios" = reuse ] && scenarios="$REUSE_SCENARIOS"
+[ "$scenarios" = product ] && scenarios="$PRODUCT_SCENARIOS"
 for name in $scenarios; do
   declare -F "scenario_${name//-/_}" >/dev/null || { echo "smoke: unknown scenario $name" >&2; exit 2; }
 done

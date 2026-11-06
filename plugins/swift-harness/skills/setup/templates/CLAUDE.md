@@ -12,12 +12,14 @@
 - Architecture hub, module map, links to all docs: @docs/ARCHITECTURE.md
 - Design system rules and tokens: `docs/DESIGN_SYSTEM.md`
 - Reusable components, one line each: `docs/COMPONENT_REGISTRY.md`
+- Entities, their pages, relations and actions: `docs/PRODUCT_MAP.md`
 - Decisions already taken, do not reopen without a new ADR: `docs/adr/`
 - Design system code: `{{DESIGN_SYSTEM_PATH}}`
 
 ## Non-negotiable rules
 - The code is the source of truth. If docs and code disagree, say so and ask.
 - UI: reuse before creating. Check `docs/COMPONENT_REGISTRY.md` and search the code before adding any view, style or modifier.
+- Product coherence: before showing an entity in a new place, read `docs/PRODUCT_MAP.md`. From there the user can open it, reach the related entities shown with it, and use its usual actions.
 - No raw visual values outside the design system: colors, font sizes, spacing, radii and animation durations come from tokens.
 - Views do not own business logic and never talk to {{PROTECTED_AREA_NAME}} directly.
 - {{PROTECTED_PATHS}} are protected. Changes there need an explicit request and a plan first.
