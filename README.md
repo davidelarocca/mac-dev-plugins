@@ -93,7 +93,7 @@ The always-on context cost is about 770 tokens per session. Skills load their fu
 - After `maxAttempts` consecutive failures (default 3): Claude stops and you decide.
 - With `lintBlocking: true`, files that failed SwiftLint after an edit are linted again here. A hook cannot undo an edit that already happened, so this is where it is caught: the turn is not recorded as passed until those files are clean.
 - "Changed" means any build input: Swift files (including `Package.swift`), `Package.resolved`, workspaces, `.pbxproj`, `.xcconfig`, plists, entitlements, asset and string catalogs, `Resources/` folders, everything under SwiftPM `Sources/` and `Tests/` folders (resources, fixtures), snapshot baselines, `scripts/`, lint and harness config. `.build`, DerivedData, Xcode per-user state (`xcuserdata`) and `.DS_Store` are ignored.
-- A result belongs to the code and to the plugin version. After a plugin update, a pass or failure recorded by the old version no longer counts, so unchanged code is verified again once.
+- A result belongs to the code and to the plugin version. After a plugin update, a pass or failure recorded by the old version no longer counts. Unchanged code is not re-run on its own: the check runs at the end of the next turn that changes build inputs, and until then `/swift-harness:doctor` shows the code as not verified.
 - A failure survives a new session: on startup or resume, Claude is told if the last check failed on the current code.
 - Works per git worktree, so parallel agents each verify their own checkout.
 
@@ -192,6 +192,7 @@ On Claude Code 2.1.275 or later, the first two lines can be one: `/plugin instal
 | `verify.enabled` | run the Stop check | `true` |
 | `verify.command` | any shell command, exit 0 means pass | `scripts/verify.sh fast` |
 | `verify.maxAttempts` | consecutive failures before Claude may stop | `3` |
+| `verify.inputs` | files or folders covered by the approval in addition to the files the command names, such as a script the command calls through quotes or `make` | `[]` |
 | `protectedPaths` | path prefixes relative to the repo root that require approval before an Edit or Write (`../` and symlinks are resolved, also when the entry itself is a symlink) | `[]` |
 | `guardPbxproj` | ask before edits to `*.pbxproj` | `true` |
 
@@ -232,7 +233,7 @@ Next up: **v1.3.0, architecture you can enforce.** Architecture contracts for Sw
 
 ## Limitations
 
-- **The verify approval covers what the command names, not everything it reads.** A `Makefile` behind `make verify`, or a script that `verify.sh` sources, can change without a new approval. Approving also means trusting the project's build (Xcode Run Script phases, SwiftPM manifests and plugins). See [SECURITY.md](SECURITY.md).
+- **The verify approval covers what the command names, not everything it reads.** The command is split on spaces, not parsed as shell: with quotes or shell syntax, `/swift-harness:approve-verify` warns that the files it runs may not be covered, and `verify.inputs` covers them. A `Makefile` behind `make verify`, or a script that `verify.sh` sources, can change without a new approval. Approving also means trusting the project's build (Xcode Run Script phases, SwiftPM manifests and plugins). See [SECURITY.md](SECURITY.md).
 - **The protected-path guard is not a sandbox.** It covers the Edit, Write and MultiEdit tools only; a shell command run through Bash can still change a protected file. For hard limits use Claude Code [permission rules](https://code.claude.com/docs/en/permissions) (`deny`).
 - The Swift reference files in the `design-system` skill are examples to adapt, not a library.
 - Snapshot tests render differently across macOS versions. Record and run them on the same OS, and re-record after major updates.
