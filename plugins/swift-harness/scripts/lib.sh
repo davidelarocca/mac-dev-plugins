@@ -144,6 +144,19 @@ sh_snapshot_list() {
     sed 's/  / /' | LC_ALL=C sort
 }
 
+# "<sha256> <path>" for every file under the protected paths, sorted, for protected-watch.sh
+# (#11). Placeholders and paths that do not exist are skipped.
+sh_protected_list() {
+  local p
+  jq -r '.protectedPaths[]? // empty' "$SH_CONFIG" 2>/dev/null | while IFS= read -r p; do
+    [ -n "$p" ] && [[ "$p" != *"{{"* ]] || continue
+    p="${p#./}"
+    p="${p%/}"
+    [ -e "$SH_ROOT/$p" ] || continue
+    (cd "$SH_ROOT" && find "$p" -type f ! -name .DS_Store -print0 2>/dev/null | xargs -0 shasum -a 256 2>/dev/null)
+  done | sed 's/  / /' | LC_ALL=C sort -u
+}
+
 # Plugin version, from the manifest next to these scripts.
 SH_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)"
 
