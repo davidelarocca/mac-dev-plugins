@@ -240,41 +240,7 @@ fi
 # Read as text from project.pbxproj build settings and Package.swift `platforms:`, never by
 # running anything, then compared with the platforms scripts/verify.sh builds and tests.
 
-platform_sources="" # lines "<platform>\t<file>", first file that declares it
-add_platform() { # $1 platform, $2 file
-  printf '%s' "$platform_sources" | cut -f1 | grep -qxF "$1" && return 0
-  platform_sources="$platform_sources$1	$2
-"
-}
-platform_of_sdk() { # Xcode SDK name -> platform
-  case "$1" in
-    macosx) echo macOS ;;
-    iphoneos | iphonesimulator) echo iOS ;;
-    xros | xrsimulator) echo visionOS ;;
-    appletvos | appletvsimulator) echo tvOS ;;
-    watchos | watchsimulator) echo watchOS ;;
-  esac
-}
-while IFS= read -r file; do
-  [ -n "$file" ] || continue
-  for sdk in $(sed -n -e 's/.*SUPPORTED_PLATFORMS = "\{0,1\}\([^";]*\)"\{0,1\};.*/\1/p' -e 's/.*SDKROOT = "\{0,1\}\([a-z]*\)"\{0,1\};.*/\1/p' "$SH_ROOT/$file"); do
-    p="$(platform_of_sdk "$sdk")"
-    [ -z "$p" ] || add_platform "$p" "$file"
-  done
-done <<<"$(git -C "$SH_ROOT" ls-files -co --exclude-standard '*.xcodeproj/project.pbxproj' 2>/dev/null)"
-while IFS= read -r file; do
-  [ -n "$file" ] || continue
-  for p in $(grep -oE '\.(macOS|iOS|tvOS|watchOS|visionOS|macCatalyst)\(' "$SH_ROOT/$file" | tr -d '.('); do
-    [ "$p" = macCatalyst ] && p="Mac Catalyst"
-    add_platform "$p" "$file"
-  done
-done <<<"$(git -C "$SH_ROOT" ls-files -co --exclude-standard 'Package.swift' '*/Package.swift' 2>/dev/null)"
-
-# A fixed order, whatever order the files list them in.
-platform_sources="$(printf '%s' "$platform_sources" | awk -F'\t' '
-  BEGIN { n = split("macOS,iOS,Mac Catalyst,visionOS,tvOS,watchOS", order, ",") }
-  NF { line[$1] = $0 }
-  END { for (i = 1; i <= n; i++) if (order[i] in line) print line[order[i]] }')"
+platform_sources="$(sh_platforms "$SH_ROOT")"
 project_platforms="$(printf '%s' "$platform_sources" | cut -f1 | paste -sd, - | sed 's/,/, /g')"
 source_of() { printf '%s' "$platform_sources" | awk -F'\t' -v p="$1" '$1 == p { print $2; exit }'; }
 
