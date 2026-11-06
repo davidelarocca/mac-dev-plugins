@@ -9,7 +9,8 @@
 # Needs: claude (logged in), Xcode (swift, swift-format), swiftlint, jq, git.
 # Costs real tokens: about $0.10-0.25 per scenario.
 #
-# Usage: tests/smoke/run.sh [scenario ...]     (default: all)
+# Usage: tests/smoke/run.sh [scenario ...]     (default: all but the reuse group)
+#        tests/smoke/run.sh reuse              (the UI reuse scenarios and their baselines)
 #   SMOKE_DIR=<dir>    where repos and transcripts go (default: a new temp dir)
 #   SMOKE_MODEL=<id>   model for the sessions (default: Claude Code's default)
 #   SMOKE_CHECK_ONLY=1 only re-check the transcripts and repos already in SMOKE_DIR
@@ -26,6 +27,9 @@ WORK="${SMOKE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/swift-harness-smoke.XXXXXX")}"
 WORK="$(mkdir -p "$WORK" && cd "$WORK" && pwd -P)"
 
 ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels lint-missing verify-unapproved approve-verify doctor"
+# Reuse of UI components (the skills, not the hooks), each with a baseline without the
+# plugin. Not in the default run: about $2 for the group. Run with `run.sh reuse`.
+REUSE_SCENARIOS="reuse-toast reuse-toast-bare reuse-toast-nocaller reuse-toast-nocaller-bare reuse-toast-undo reuse-toast-undo-bare"
 PLUGIN_DATA="${SMOKE_PLUGIN_DATA:-$HOME/.claude/plugins/data/swift-harness-inline}"
 
 for tool in claude swift swiftlint jq git; do
@@ -260,16 +264,189 @@ check_doctor() {
   expect "Claude did not run the approval" not_ran 'approve-verify'
 }
 
+# The problem swift-harness exists for: a second, slightly different copy of a UI
+# component that already exists. The app has a shared pill presenter (the plugin's own
+# reference PillCenter) with one caller; the task asks for a confirmation on another
+# screen without naming it. reuse-toast runs in a project set up with swift-harness
+# (plugin, CLAUDE.md, rules, registry); reuse-toast-bare is the same code with none of
+# that, as a baseline: its results are reported, not counted as failures.
+REUSE_TASK='In the Settings screen (Sources/App/SettingsView.swift), show the user a brief, non-blocking confirmation such as "Settings saved" after they click Save.'
+
+# Words: "docs" adds what /swift-harness:setup would leave in the project; "nocaller"
+# leaves the presenter hosted but unused by any feature, so nothing nearby shows the way.
+reuse_fixture() {
+  local refs="$PLUGIN/skills/design-system/references" t="$TEMPLATES" used_by=LibraryView
+  rm -f Sources/DesignSystem/Tokens.swift
+  cp "$refs/Tokens.swift" "$refs/PillCenter.swift" Sources/DesignSystem/
+  cp -R "$REPO/tests/fixtures/design-system/Sources/DesignSystem/Resources" Sources/DesignSystem/
+  sed -i '' 's|\.target(name: "DesignSystem")|.target(name: "DesignSystem", resources: [.process("Resources")])|' Package.swift
+  cat >Sources/App/RootView.swift <<'EOF'
+import DesignSystem
+import SwiftUI
+
+public struct RootView: View {
+    @State private var pills = PillCenter()
+
+    public init() {}
+
+    public var body: some View {
+        TabView {
+            LibraryView()
+                .tabItem { Label("Library", systemImage: "music.note.list") }
+            SettingsView()
+                .tabItem { Label("Settings", systemImage: "gear") }
+        }
+        .pillHost()
+        .environment(pills)
+    }
+}
+EOF
+  cat >Sources/App/LibraryView.swift <<'EOF'
+import DesignSystem
+import SwiftUI
+
+struct LibraryView: View {
+    @Environment(PillCenter.self) private var pills
+    @State private var tracks: [String] = []
+
+    var body: some View {
+        VStack(spacing: Spacing.m) {
+            List(tracks, id: \.self) { Text($0) }
+            Button("Add Track") {
+                tracks.append("Track \(tracks.count + 1)")
+                pills.show(.success("Added to library"))
+            }
+        }
+        .padding(Spacing.l)
+    }
+}
+EOF
+  case " $* " in *" nocaller "*)
+    used_by="none yet"
+    sed -i '' -e '/@Environment(PillCenter.self)/d' -e '/pills.show/d' Sources/App/LibraryView.swift ;;
+  esac
+  cat >Sources/App/SettingsView.swift <<'EOF'
+import SwiftUI
+
+struct SettingsView: View {
+    @AppStorage("displayName") private var displayName = ""
+    @State private var draft = ""
+
+    var body: some View {
+        Form {
+            TextField("Display name", text: $draft)
+            Button("Save") { save() }
+                .disabled(draft.isEmpty)
+        }
+        .onAppear { draft = displayName }
+    }
+
+    private func save() {
+        displayName = draft
+    }
+}
+EOF
+  case " $* " in *" docs "*) ;; *) return 0 ;; esac
+  mkdir -p docs .claude/rules
+  sed -e 's|{{APP_NAME}}|Smoke|' -e 's|{{ONE_LINE_DESCRIPTION}}|A small music library app for macOS.|' \
+    -e 's|{{FORMAT_COMMAND}}|`swift format --in-place --recursive Sources`|' \
+    -e 's|{{DESIGN_SYSTEM_PATH}}|Sources/DesignSystem/|' -e 's|{{PROTECTED_AREA_NAME}}|the audio engine|' \
+    -e 's|{{PROTECTED_PATHS}}|`Sources/Audio/`|' -e 's|{{PBXPROJ_NOTE}}||' "$t/CLAUDE.md" >CLAUDE.md
+  sed -e 's|{{APP_NAME}}|Smoke|' -e 's|{{DESIGN_SYSTEM_PATH}}|Sources/DesignSystem/|' \
+    -e 's|{{GALLERY_LOCATION}}|Xcode previews|' "$t/docs/DESIGN_SYSTEM.md" >docs/DESIGN_SYSTEM.md
+  sed 's|{{[A-Z_]*}}|see the code|g' "$t/docs/ARCHITECTURE.md" >docs/ARCHITECTURE.md
+  sed 's#^| UI-001 |.*#| UI-001 | PillCenter | Transient, non-blocking feedback pill at the top of the window, queued and dismissed automatically | Confirmations and non-blocking errors after a user action | Detail tied to a control (popover); errors that need a decision (alert) | `@Environment(PillCenter.self)`, then `pills.show(.success("..."))`. Host: `.pillHost()` once per window | Sources/DesignSystem/PillCenter.swift | '"$used_by"' | previews |#' \
+    "$t/docs/COMPONENT_REGISTRY.md" >docs/COMPONENT_REGISTRY.md
+  sed 's|{{STATE_PATTERN}}|@Observable models injected through the environment|' "$t/rules/architecture.md" >.claude/rules/architecture.md
+  sed 's|{{DESIGN_SYSTEM_GLOB}}|Sources/DesignSystem/**|' "$t/rules/design-system.md" >.claude/rules/design-system.md
+  sed 's|{{FEATURES_GLOB}}|Sources/App/**|' "$t/rules/ui-features.md" >.claude/rules/ui-features.md
+}
+
+scenario_reuse_toast() {
+  CONFIG="{$BASE_CONFIG,\"lintBlocking\":false}"
+  TASK="$REUSE_TASK"
+  SETUP="$FOUR_SPACES; reuse_fixture docs"
+}
+check_reuse_toast() {
+  expect "confirmation sent through the shared presenter" added_has '\.show\('
+  expect "presenter read from the environment, not a new instance" added_has '@Environment\(PillCenter\.self\)'
+  expect "no new toast, banner or overlay type, no view modifier" not_added '(struct|class|enum|actor) [A-Za-z]*(Toast|Pill|Banner|HUD|Snackbar|Notice|Confirmation|Overlay)|: *ViewModifier'
+  expect "no local overlay or dismiss timer" not_added '\.overlay\(|Task\.sleep|asyncAfter|Timer\.'
+  expect "design system unchanged, or registry updated with it" ds_change_documented
+  expect "build and tests pass" verifies
+  note "ui-change skill loaded" used_skill 'ui-change'
+}
+
+scenario_reuse_toast_bare() {
+  CONFIG=""
+  TASK="$REUSE_TASK"
+  SETUP="$FOUR_SPACES; reuse_fixture"
+  PLUGIN_OFF=1
+  APPROVE=0
+}
+check_reuse_toast_bare() { check_reuse_toast; }
+
+scenario_reuse_toast_nocaller() {
+  scenario_reuse_toast
+  SETUP="$FOUR_SPACES; reuse_fixture docs nocaller"
+}
+check_reuse_toast_nocaller() { check_reuse_toast; }
+
+scenario_reuse_toast_nocaller_bare() {
+  scenario_reuse_toast_bare
+  SETUP="$FOUR_SPACES; reuse_fixture nocaller"
+}
+check_reuse_toast_nocaller_bare() { check_reuse_toast; }
+
+# The shared pill has no action; the task needs one. Extending it is the expected answer
+# (ui-change: "same behavior, needs a new option"); a local undo banner is the duplicate.
+UNDO_TASK='In the Library screen (Sources/App/LibraryView.swift), add a "Clear Library" button that removes all tracks. After clearing, show a brief, non-blocking message "Library cleared" with an Undo action that restores the tracks.'
+NEW_PRESENTER='(struct|class|enum|actor) [A-Za-z]*(Toast|Banner|HUD|Snackbar|Notice|Overlay|Center|Presenter|Host)|: *ViewModifier'
+
+scenario_reuse_toast_undo() {
+  scenario_reuse_toast
+  TASK="$UNDO_TASK"
+}
+check_reuse_toast_undo() {
+  expect "message sent through the shared presenter" added_has '\.show\('
+  expect "no toast, banner or overlay type in App, no view modifier" not_added "$NEW_PRESENTER|struct [A-Za-z]*(Pill|Undo|Confirmation)"
+  expect "no local overlay or dismiss timer in App" not_added '\.overlay\(|Task\.sleep|asyncAfter|Timer\.'
+  expect "shared pill extended in the design system" not unchanged Sources/DesignSystem/PillCenter.swift
+  expect "no second presenter or host in the design system" not_added "$NEW_PRESENTER" Sources/DesignSystem
+  expect "design system unchanged, or registry updated with it" ds_change_documented
+  expect "build and tests pass" verifies
+  note "ui-change skill loaded" used_skill 'ui-change'
+}
+
+scenario_reuse_toast_undo_bare() {
+  scenario_reuse_toast_bare
+  TASK="$UNDO_TASK"
+}
+check_reuse_toast_undo_bare() { check_reuse_toast_undo; }
+
 # ---------- checks ----------
 
 T=""   # transcript of the scenario being checked
 D=""   # repo of the scenario being checked
 failures=0
+REPORT_ONLY=0
 
 expect() { # $1 description, then a check command
   local what="$1"
   shift
-  if "$@"; then printf '  ok    %s\n' "$what"; else printf '  FAIL  %s\n' "$what"; failures=$((failures + 1)); fi
+  if "$@"; then
+    printf '  ok    %s\n' "$what"
+  elif [ "$REPORT_ONLY" = 1 ]; then
+    printf '  miss  %s (baseline, not counted)\n' "$what"
+  else
+    printf '  FAIL  %s\n' "$what"
+    failures=$((failures + 1))
+  fi
+}
+note() { # like expect, never counted
+  local what="$1"
+  shift
+  if "$@"; then printf '  info  %s: yes\n' "$what"; else printf '  info  %s: no\n' "$what"; fi
 }
 
 # $1 hook event, $2 exit code (number or JSON array of numbers), $3 regex on stdout+stderr
@@ -306,7 +483,24 @@ approved_for_hooks() {
 }
 not_executable() { [ -f "$D/$1" ] && [ ! -x "$D/$1" ]; }
 unchanged() { git -C "$D" diff --quiet HEAD -- "$1" && [ -z "$(git -C "$D" ls-files --others --exclude-standard -- "$1")" ]; }
+not() { ! "$@"; }
 file_has() { [ -f "$D/$1" ] && grep -qE -- "$2" "$D/$1"; }
+# Lines added under $2 (default Sources/App) since the scenario commit, new files included
+added_lines() {
+  git -C "$D" add -N -- "$1"
+  git -C "$D" diff HEAD -- "$1" | grep '^+' | grep -v '^+++ '
+}
+added_has() { added_lines "${2:-Sources/App}" | grep -qE -- "$1"; }
+not_added() { ! added_has "$@"; }
+ds_change_documented() { # passes in projects without a registry (baselines)
+  unchanged Sources/DesignSystem || [ ! -f "$D/docs/COMPONENT_REGISTRY.md" ] || ! unchanged docs/COMPONENT_REGISTRY.md
+}
+verifies() { (cd "$D" && scripts/verify.sh fast >/dev/null 2>&1); }
+used_skill() {
+  jq -se --arg re "$1" '[.[] | select(.type == "assistant") | .message.content[]?
+    | select(.type == "tool_use" and .name == "Skill") | .input.skill // "" | select(test($re))]
+    | length > 0' "$T" >/dev/null
+}
 
 # ---------- run ----------
 
@@ -317,11 +511,12 @@ run_scenario() { # $1 name
   SESSION_ENV=""
   APPROVE=1
   EXTRA_TOOLS=""
+  PLUGIN_OFF=0
   "$fn"
   rm -rf "$d"
   git clone -q "$WORK/base" "$d"
   mkdir -p "$d/.claude"
-  printf '%s\n' "$CONFIG" >"$d/.claude/swift-harness.json"
+  [ -z "$CONFIG" ] || printf '%s\n' "$CONFIG" >"$d/.claude/swift-harness.json"
   [ -z "$SETUP" ] || (cd "$d" && eval "$SETUP")
   git -C "$d" add -A
   git -C "$d" -c user.email=smoke@example.com -c user.name=smoke commit -qm "scenario $name"
@@ -330,11 +525,13 @@ run_scenario() { # $1 name
     digest="$(CLAUDE_PLUGIN_DATA="$PLUGIN_DATA" "$PLUGIN/scripts/approve-verify.sh" --status "$d" | sed -n 's/^Digest: *//p')"
     CLAUDE_PLUGIN_DATA="$PLUGIN_DATA" "$PLUGIN/scripts/approve-verify.sh" --approve "$digest" "$d" >/dev/null
   fi
+  local plugin_args=(--plugin-dir "$PLUGIN")
+  [ "$PLUGIN_OFF" = 1 ] && plugin_args=()
   (
     cd "$d" || exit 1
     # shellcheck disable=SC2086 # SESSION_ENV is a list of VAR=value words
     env $SESSION_ENV claude -p "$TASK" ${SMOKE_MODEL:+--model "$SMOKE_MODEL"} \
-      --plugin-dir "$PLUGIN" --setting-sources project,local \
+      ${plugin_args[@]+"${plugin_args[@]}"} --setting-sources project,local \
       --permission-mode acceptEdits \
       --allowedTools Read Glob Grep Edit Write "Bash(swift build:*)" "Bash(swift test:*)" \
       "Bash(git status:*)" "Bash(git diff:*)" "Bash(scripts/verify.sh:*)" ${EXTRA_TOOLS:+"$EXTRA_TOOLS"} \
@@ -344,6 +541,7 @@ run_scenario() { # $1 name
 }
 
 scenarios="${*:-$ALL_SCENARIOS}"
+[ "$scenarios" = reuse ] && scenarios="$REUSE_SCENARIOS"
 for name in $scenarios; do
   declare -F "scenario_${name//-/_}" >/dev/null || { echo "smoke: unknown scenario $name" >&2; exit 2; }
 done
@@ -360,6 +558,7 @@ total_cost=0
 for name in $scenarios; do
   T="$WORK/$name.jsonl"
   D="$WORK/$name"
+  case "$name" in *-bare) REPORT_ONLY=1 ;; *) REPORT_ONLY=0 ;; esac
   cost="$(jq -r 'select(.type == "result") | .total_cost_usd' "$T" 2>/dev/null)"
   total_cost="$(printf '%s + %s\n' "$total_cost" "${cost:-0}" | bc)"
   printf '\n== %s ($%s)\n' "$name" "${cost:-?}"
