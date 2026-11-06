@@ -29,6 +29,7 @@ Collect, and show the user a short summary:
 - Existing tooling: `.swiftlint.yml`, `.swiftformat`, `.swift-format`, test targets, snapshot tests.
 - Installed tools: `which swiftlint swiftformat jq`, and `xcrun --find swift-format`.
 - Protected areas candidates: audio engines, persistence/migrations, crypto, anything the docs flag as critical.
+- Security settings: `*.entitlements` files (sandbox, hardened runtime exceptions, capabilities), `Info.plist` files of app targets (usage descriptions, URL schemes, ATS), `PrivacyInfo.xcprivacy`. Find them with `git ls-files '*.entitlements' '*Info.plist' '*.xcprivacy'`, ignoring tests and third-party code.
 
 ## 3. Ask only what you cannot detect
 
@@ -36,7 +37,7 @@ Use one AskUserQuestion call with at most four questions, for example:
 
 - Design system location: a local Swift package `Packages/DesignSystem` (recommended) or a folder inside the app target.
 - Formatter: `swiftformat` (recommended, needs Homebrew) or Apple `swift-format` (ships with Xcode).
-- Protected paths that require explicit approval before Claude edits them.
+- Protected paths that require explicit approval before Claude edits them. Pre-select the security settings files found in step 2 and recommend keeping them: Claude tends to relax an entitlement to make something work. List each file by its path: protected paths are exact files or folder prefixes, not globs.
 - Verify commands: the fast check run before Claude ends a turn, and the full check run before merging.
 
 ## 4. Generate files
