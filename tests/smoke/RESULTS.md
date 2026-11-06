@@ -2,6 +2,13 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-06, doctor (#12, branch `feat/doctor`)
+
+Claude Code 2.1.318, Apple Swift 6.4.2. Two new scenarios that run the user-only skills through `claude -p "/swift-harness:<skill>"`: **11/11 invariants**, $0.37.
+
+- `approve-verify`: Claude showed the status, read `scripts/verify.sh`, said it runs `swift test` with nothing risky and that approving means trusting the package build, then approved. The approval was the one the hooks read: `${CLAUDE_PLUGIN_DATA}` in skill content resolves to the hooks' data folder. That had only been assumed in #6.
+- `doctor`: printed the table as is, listed the FAIL (verify script not executable) and the WARN (`lintBlok`, a likely typo of `lintBlocking`), and asked before fixing. No file changed.
+
 ## 2026-11-06, verify approval (#6, branch `feat/verify-approval`)
 
 Claude Code 2.1.318, SwiftLint 0.65.1, Apple Swift 6.4.2. Full suite, 9 scenarios: **31/31 invariants**, $1.16.
