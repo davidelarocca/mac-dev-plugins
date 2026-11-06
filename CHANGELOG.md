@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## swift-harness 1.3.1 (2026-11-06)
 
 Fixes from an external audit of 1.3.0 (SH130-01 to SH130-08), each reproduced on 1.3.0 and covered by a test that failed before the fix.
 
