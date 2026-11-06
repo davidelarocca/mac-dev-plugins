@@ -157,6 +157,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/dd" 2>&1 | tee "$RUNNER_TEMP/a11y.log" | grep -E 'Test Case|negative control|error:|TEST (SUCCEEDED|FAILED)'
           grep -q 'TEST SUCCEEDED' "$RUNNER_TEMP/a11y.log"
 
+  plugin-validate:
     name: claude plugin validate
     runs-on: ubuntu-latest
     # Uses the latest Claude Code CLI from npm, so validator changes show up here first.
