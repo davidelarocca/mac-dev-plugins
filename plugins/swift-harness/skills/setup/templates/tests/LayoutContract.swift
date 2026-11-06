@@ -20,6 +20,13 @@
 // - Window, the view the window shows (the content plus the window's minimum frame): its
 //   declared minimum is Min, so the window neither shrinks below Min nor stops above it; with
 //   a Max, it does not grow past it.
+// Content whose width cannot be measured is reported, not passed: a NavigationSplitView, an
+// HSplitView, a List or a Table takes any width and clips what does not fit without reporting
+// it. Measure the pages of the detail column and the sidebar on rows of their own; a split
+// view's row names its window type as View and Window. Its heights are still measured.
+// Content that takes any width but has a width of its own (text that wraps, or content in a
+// .frame(minWidth: 0, maxWidth: .infinity), which hides its overflow) cannot be told apart: it
+// is measured, and a note on the test output says its width is checked only as far as it wraps.
 // Not measured: truncated text, overlaps, where popovers open. Those stay in review.
 //
 // The contract is found from the calling test file upwards: `layout.path` in
@@ -94,6 +101,7 @@ enum LayoutContract {
             NSHostingController(rootView: content).sizeThatFits(in: proposal)
         }
 
+        var widthMeasurable = true
         var sizes: [Size] = [min]
         if let compact = compactCell, compact.width > min.width {
             sizes.append(Size(width: compact.width - 1, height: min.height))
@@ -103,11 +111,24 @@ enum LayoutContract {
         if let size = maxCell { sizes.append(size) }
 
         var problems: [String] = []
+        // Content that accepts 1 pt of width hides whatever does not fit: a split view or a frame
+        // from zero to infinity clips it without reporting it. Saying it fits would be a guess.
+        // A split view, a List or a Table takes any width and has no width of its own: what it
+        // holds is clipped without being reported. Text that wraps also takes any width, but has
+        // one of its own. A row whose View is also its Window is checked as a window below.
+        let kind = asContent.map { $0.window == view } == false ? width(of: content, height: min.height) : .measurable
+        if kind == .open {
+            print("swift-harness layout: \(place): takes any width, so its width is checked only as far as it wraps like text. A .frame(minWidth: 0, maxWidth: .infinity) or other stretched content hides what does not fit: measure the content inside it on a row of its own.")
+        }
+        if kind == .hidden {
+            widthMeasurable = false
+            problems.append("\(place): its width cannot be measured: it takes any width, even 1 pt, and has none of its own, so content that does not fit is clipped without being reported (NavigationSplitView, HSplitView, List and Table do this). Measure what it holds: give each page of the detail column and the sidebar a row of its own, with View the page and Min the width its column gets at the window's Min. For a split view, set this row's View to its Window type, so the row checks the window's sizes.")
+        }
         var seen: [Size] = []
         for size in sizes where asContent != nil && !seen.contains(size) {
             seen.append(size)
             let need = needed(CGSize(width: size.width, height: size.height ?? unbounded))
-            if need.width > size.width + tolerance {
+            if widthMeasurable, need.width > size.width + tolerance {
                 problems.append("\(place): at \(size.text) it needs \(Size.number(need.width)) pt of width. Content is clipped or pushed out of the window: let it shrink, wrap or collapse (ViewThatFits, a menu) below this width.")
             }
             if let height = size.height, need.height > height + tolerance {
@@ -132,6 +153,26 @@ enum LayoutContract {
             }
         }
         return problems
+    }
+
+    enum Width {
+        /// It asks for the width it needs: the checks at each size measure it.
+        case measurable
+        /// It takes any width and asks for none: a split view, a List or a Table. What it holds
+        /// is clipped without being reported.
+        case hidden
+        /// It takes any width but asks for one when nothing is proposed: text that wraps, or a
+        /// stretched frame that hides its content. The two cannot be told apart.
+        case open
+    }
+
+    /// How far sizeThatFits can see the width a view needs.
+    @MainActor
+    static func width<Content: View>(of content: Content, height: CGFloat? = nil) -> Width {
+        let host = NSHostingController(rootView: content)
+        guard host.sizeThatFits(in: CGSize(width: 1, height: height ?? unbounded)).width <= 1 + tolerance else { return .measurable }
+        host.sizingOptions = [.intrinsicContentSize]
+        return host.view.fittingSize.width <= tolerance ? .hidden : .open
     }
 
     /// `layout.path` from the first .claude/swift-harness.json above `folder`, else the first

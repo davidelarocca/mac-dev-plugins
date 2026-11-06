@@ -26,6 +26,9 @@ Sizes are in points, `<width>x<height>`, or `<width>` alone when the height does
 | | | | | | | | | |
 
 - **View**: the SwiftUI type of the screen's content. **File**: where it is declared, from the repository root.
+  A split view (`NavigationSplitView`, `HSplitView`) takes any width, so its content cannot be measured: name
+  its window type as View and Window, and give each page of the detail column and the sidebar a row of its own,
+  with Min the width its column gets at the window's Min.
 - **Window**: for a screen that fills a window, the type the window shows, which declares the window's
   minimum size (often `View().frame(minWidth: ..., minHeight: ...)` in its own type). Empty for a pane (a
   sidebar, an inspector, a detail column), which is measured as View only. It can be the View itself when the
