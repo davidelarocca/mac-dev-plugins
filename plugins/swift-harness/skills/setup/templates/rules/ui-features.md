@@ -12,6 +12,7 @@ paths:
 - Collections the user creates or organizes get create, rename, reorder, delete and undo, or a row in the map's "Exceptions" saying why not.
 - Transient feedback (pills, toasts, banners) goes through the shared presenter in the environment. Never build a local overlay for it.
 - Buttons use the shared `ButtonStyle`s. Hover, pressed, selected and disabled states come from the design system.
+- Follow each platform the view runs on. iOS: text styles so Dynamic Type scales the text, touch targets of at least 44 pt, content inside the safe area, layouts that follow size class (compact width on iPhone and in iPad multitasking). macOS: hover, focus and keyboard access.
 - Keep `body` small. Extract subviews when a body grows past roughly 40 lines or mixes several responsibilities.
 - Views read state and send intents. Business rules, file I/O and playback control live in models or services.
 - If you need something the design system lacks, add it to the design system first (follow the `ui-change` skill), then use it here.
