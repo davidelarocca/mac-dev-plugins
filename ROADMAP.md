@@ -27,6 +27,14 @@ Screens that hold up at every window size, reviewed as they look, not only as th
 | 👁️ | **Design review on screenshots.** The reviewer looks at the rendered UI (snapshots, previews, the running app) against the design system and the product map. | [#35](https://github.com/davidelarocca/swift-harness/issues/35) |
 | 🖼️ | **Visual regression for shared components.** Gallery and snapshot tests on a pinned macOS version; baselines change only with explicit approval. | [#9](https://github.com/davidelarocca/swift-harness/issues/9) |
 
+## Then: v1.5.0, iOS and multiplatform
+
+The same harness for iOS, iPadOS and multiplatform Swift apps. Most of swift-harness is already platform-neutral; what assumes macOS becomes platform-aware.
+
+| | What you get | Issue |
+|---|---|---|
+| 📱 | **iOS and multiplatform projects.** Setup, doctor and the verify script detect the platforms and pick the right destination (simulator for iOS); UI skills and the reviewer apply each platform's conventions (Dynamic Type, safe areas, touch targets, size classes). Checked on a real iOS app before the README says so. | [#40](https://github.com/davidelarocca/swift-harness/issues/40) |
+
 ## Later
 
 | | What you get | Issue |
