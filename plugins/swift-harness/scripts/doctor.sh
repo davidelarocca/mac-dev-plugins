@@ -64,8 +64,9 @@ if ! jq -e 'type == "object"' "$SH_CONFIG" >/dev/null 2>&1; then
 fi
 
 unknown="$(jq -r '
-  (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify"])[],
-  (if (.verify | type) == "object" then (.verify | keys - ["enabled", "command", "maxAttempts", "inputs"])[] | "verify." + . else empty end)
+  (keys - ["format", "lint", "lintBlocking", "guardPbxproj", "protectedPaths", "verify", "registry"])[],
+  (if (.verify | type) == "object" then (.verify | keys - ["enabled", "command", "maxAttempts", "inputs"])[] | "verify." + . else empty end),
+  (if (.registry | type) == "object" then (.registry | keys - ["enabled", "path", "sources"])[] | "registry." + . else empty end)
 ' "$SH_CONFIG" | paste -sd, - | sed 's/,/, /g')"
 if [ -n "$unknown" ]; then
   row WARN "Config keys" "unknown, ignored by the hooks (typo?): $unknown"
@@ -86,6 +87,12 @@ problems="$(jq -r '
     check(["verify", "command"]; type == "string" and length > 0; "verify.command must be a non-empty string"),
     check(["verify", "maxAttempts"]; type == "number" and . >= 1 and floor == .; "verify.maxAttempts must be a whole number, 1 or more"),
     check(["verify", "inputs"]; type == "array" and all(.[]; type == "string"); "verify.inputs must be a list of paths")
+  else empty end),
+  check(["registry"]; type == "object"; "registry must be an object"),
+  (if (.registry | type) == "object" then
+    check(["registry", "enabled"]; type == "boolean"; "registry.enabled must be true or false"),
+    check(["registry", "path"]; type == "string" and length > 0; "registry.path must be a path"),
+    check(["registry", "sources"]; type == "array" and all(.[]; type == "string"); "registry.sources must be a list of folders")
   else empty end)
 ' "$SH_CONFIG" | paste -sd ';' - | sed 's/;/; /g')"
 if [ -n "$problems" ]; then
@@ -231,6 +238,31 @@ elif [ -n "$packages_found" ]; then
   row INFO "Architecture contracts" "none: add $SH_CONTRACT to fail the end-of-turn check when a target gains a dependency the contract does not allow"
 else
   row INFO "Architecture contracts" "not available: they check the dependencies between SwiftPM targets, and this project has no SwiftPM package"
+fi
+
+# Component registry (#7). Reads Markdown and Swift files only.
+registry="$(sh_registry)"
+if [ "$(sh_cfg '.registry.enabled' 'true')" != true ]; then
+  row INFO "Component registry" "off (registry.enabled is false)"
+elif [ ! -f "$SH_ROOT/$registry" ]; then
+  row INFO "Component registry" "none: $registry lists the shared components Claude must reuse; /swift-harness:setup creates it, and the end-of-turn check keeps it true"
+else
+  registry_out="$("$here/registry.sh" check "$SH_ROOT" 2>&1)"
+  case $? in
+    0)
+      summary="$("$here/registry.sh" summary "$SH_ROOT")"
+      missing="$("$here/registry.sh" missing "$SH_ROOT" | awk -F'\t' '{printf "%s%s (%s)", (NR > 1 ? ", " : ""), $1, $2}')"
+      if [ -n "$missing" ]; then
+        row WARN "Component registry" "$summary; not listed: $missing. Fix: add them, or list them under Internal"
+      elif [ -z "$(jq -r '.registry.sources[]? | strings' "$SH_CONFIG" 2>/dev/null | grep -v '{{')" ]; then
+        row PASS "Component registry" "$summary, checked at the end of each turn; set registry.sources to also find components it does not list"
+      else
+        row PASS "Component registry" "$summary, checked at the end of each turn"
+      fi
+      ;;
+    3) row WARN "Component registry" "${registry_out#Component registry ($registry): }" ;;
+    *) row FAIL "Component registry" "$(printf '%s\n' "$registry_out" | grep '^- ' | head -3 | sed 's/^- //' | paste -sd ';' - | sed 's/;/; /g'). Fix: update $registry" ;;
+  esac
 fi
 
 # ---------- last verification ----------

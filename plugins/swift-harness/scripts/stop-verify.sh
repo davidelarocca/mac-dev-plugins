@@ -19,7 +19,10 @@ if [ "$(sh_cfg '.lintBlocking' 'false')" = "true" ] && [ "$(sh_cfg '.lint' 'swif
   # Strict mode: edits that could not be linted are not a passing lint (#17).
   command -v swiftlint >/dev/null 2>&1 || lint_missing=true
 fi
-[ "$verify_enabled" = "true" ] || [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ] || exit 0
+# Component registry (#7): reads Markdown only, so it needs no approval.
+run_registry=false
+sh_registry_on && run_registry=true
+[ "$verify_enabled" = "true" ] || [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ] || [ "$run_registry" = "true" ] || exit 0
 
 command_line="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
 max_attempts="$(sh_cfg '.verify.maxAttempts' '3')"
@@ -35,6 +38,7 @@ run_contracts=false
 checks=""
 [ "$run_verify" = "true" ] && checks="$command_line"
 [ "$run_contracts" = "true" ] && checks="$checks + architecture contracts"
+[ "$run_registry" = "true" ] && checks="${checks:+$checks + }component registry"
 { [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ]; } && checks="${checks:+$checks + }SwiftLint (lintBlocking)"
 
 fp="$(sh_identity)"
@@ -118,6 +122,15 @@ fi
 if [ "$run_contracts" = "true" ]; then
   printf '\n== Architecture contracts ==\n' >>"$out"
   "$(dirname "$0")/contracts.sh" "$SH_ROOT" >>"$out" 2>&1 || { [ "$status" -ne 0 ] || status=1; }
+fi
+
+if [ "$run_registry" = "true" ]; then
+  registry_out="$("$(dirname "$0")/registry.sh" check "$SH_ROOT" 2>&1)"
+  # Exit 3: a registry in another format is reported by doctor, never blocks.
+  if [ $? -eq 1 ]; then
+    printf '\n== Component registry ==\n%s\n' "$registry_out" >>"$out"
+    [ "$status" -ne 0 ] || status=1
+  fi
 fi
 
 if [ "$status" -eq 0 ]; then

@@ -122,6 +122,11 @@ SH_BUILD_INPUTS=(
 # Architecture contract (#13), checked by contracts.sh. Also a build input above.
 SH_CONTRACT="docs/architecture-contracts.json"
 
+# Component registry (#7), checked by registry.sh. Part of the fingerprint, so a registry
+# fixed after a failed check is checked again.
+sh_registry() { local p; p="$(sh_cfg '.registry.path' 'docs/COMPONENT_REGISTRY.md')"; printf '%s' "${p#./}"; }
+sh_registry_on() { [ "$(sh_cfg '.registry.enabled' 'true')" = "true" ] && [ -f "$SH_ROOT/$(sh_registry)" ]; }
+
 # Plugin version, from the manifest next to these scripts.
 SH_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)"
 
@@ -139,8 +144,8 @@ sh_identity() {
 sh_fingerprint() {
   {
     git -C "$SH_ROOT" rev-parse HEAD 2>/dev/null
-    git -C "$SH_ROOT" diff HEAD -- "${SH_BUILD_INPUTS[@]}" 2>/dev/null
-    git -C "$SH_ROOT" ls-files -z --others --exclude-standard -- "${SH_BUILD_INPUTS[@]}" 2>/dev/null |
+    git -C "$SH_ROOT" diff HEAD -- "${SH_BUILD_INPUTS[@]}" "$(sh_registry)" 2>/dev/null
+    git -C "$SH_ROOT" ls-files -z --others --exclude-standard -- "${SH_BUILD_INPUTS[@]}" "$(sh_registry)" 2>/dev/null |
       while IFS= read -r -d '' f; do shasum "$SH_ROOT/$f" 2>/dev/null; done
   } | shasum | cut -d' ' -f1
 }
