@@ -210,9 +210,27 @@ packages_found="$(cd "$SH_ROOT" && find . -maxdepth 3 -name Package.swift -not -
 containers="$(cd "$SH_ROOT" && find . -maxdepth 2 \( -name '*.xcodeproj' -o -name '*.xcworkspace' \) -not -path '*/.build/*' \
   -not -path '*.xcodeproj/*' 2>/dev/null | sed 's|^\./||' | sort | paste -sd, - | sed 's/,/, /g')"
 if [ -n "$packages_found" ]; then
-  row INFO "Project structure" "SwiftPM packages: $packages_found${containers:+; Xcode: $containers}. Architecture contracts (planned, #13) can check the dependencies between their targets"
+  row INFO "Project structure" "SwiftPM packages: $packages_found${containers:+; Xcode: $containers}"
 else
-  row INFO "Project structure" "${containers:-no Xcode project found}, no SwiftPM package: architecture contracts (planned, #13) need code split into SwiftPM modules"
+  row INFO "Project structure" "${containers:-no Xcode project found}, no SwiftPM package"
+fi
+
+# Architecture contracts (#13). Checked without running any manifest: doctor runs nothing
+# from the repository.
+if [ -f "$SH_ROOT/$SH_CONTRACT" ]; then
+  if summary="$("$here/contracts.sh" --validate "$SH_ROOT" 2>&1)"; then
+    if [ "$verify_enabled" = true ] && [ -n "${CLAUDE_PLUGIN_DATA:-}" ] && sh_verify_approved "$command_line" "$state"; then
+      row PASS "Architecture contracts" "$SH_CONTRACT: $summary, checked at the end of each turn and when Package.swift is edited"
+    else
+      row WARN "Architecture contracts" "$SH_CONTRACT: $summary, but not checked: reading the dependency graph runs Package.swift, so it happens only with the verify command enabled and approved"
+    fi
+  else
+    row FAIL "Architecture contracts" "${summary#Architecture contracts ($SH_CONTRACT): }"
+  fi
+elif [ -n "$packages_found" ]; then
+  row INFO "Architecture contracts" "none: add $SH_CONTRACT to fail the end-of-turn check when a target gains a dependency the contract does not allow"
+else
+  row INFO "Architecture contracts" "not available: they check the dependencies between SwiftPM targets, and this project has no SwiftPM package"
 fi
 
 # ---------- last verification ----------

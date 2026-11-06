@@ -115,8 +115,12 @@ SH_BUILD_INPUTS=(
   '*/Resources/*' '*__Snapshots__/*'
   'Sources/*' '*/Sources/*' 'Tests/*' '*/Tests/*'
   '.swiftlint.yml' '.swiftformat' '.swift-format' '.claude/swift-harness.json' 'scripts/*'
+  'docs/architecture-contracts.json'
   ':!.build/*' ':!*/.build/*' ':!*DerivedData/*' ':!*xcuserdata/*' ':!*.DS_Store'
 )
+
+# Architecture contract (#13), checked by contracts.sh. Also a build input above.
+SH_CONTRACT="docs/architecture-contracts.json"
 
 # Plugin version, from the manifest next to these scripts.
 SH_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)"

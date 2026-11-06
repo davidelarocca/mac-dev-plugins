@@ -28,8 +28,13 @@ run_verify=false
 if [ "$verify_enabled" = "true" ]; then
   sh_verify_approved "$command_line" "$state" && run_verify=true
 fi
+# Architecture contracts (#13): read the graph with `swift package dump-package`, which runs
+# Package.swift, so only together with the approved verify command.
+run_contracts=false
+[ "$run_verify" = "true" ] && [ -f "$SH_ROOT/$SH_CONTRACT" ] && run_contracts=true
 checks=""
 [ "$run_verify" = "true" ] && checks="$command_line"
+[ "$run_contracts" = "true" ] && checks="$checks + architecture contracts"
 { [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ]; } && checks="${checks:+$checks + }SwiftLint (lintBlocking)"
 
 fp="$(sh_identity)"
@@ -99,7 +104,9 @@ if [ "$run_verify" = "true" ]; then
   (cd "$SH_ROOT" && bash -c "$command_line") >"$out" 2>&1
   status=$?
 elif [ "$verify_enabled" = "true" ]; then
-  printf '== %s ==\nNot run: the user has not approved this verify command yet (/swift-harness:approve-verify), so the build and tests were not checked. Do not run the approval yourself.\n' "$command_line" >>"$out"
+  not_checked="the build and tests were not checked"
+  [ -f "$SH_ROOT/$SH_CONTRACT" ] && not_checked="the build, tests and architecture contracts were not checked"
+  printf '== %s ==\nNot run: the user has not approved this verify command yet (/swift-harness:approve-verify), so %s. Do not run the approval yourself.\n' "$command_line" "$not_checked" >>"$out"
 fi
 if [ "$lint_missing" = "true" ]; then
   printf '\n== SwiftLint (lintBlocking) ==\nSwiftLint is not installed, but lintBlocking is on: the Swift files changed in this session were not linted. Tell the user to install it (brew install swiftlint) or to turn lintBlocking off; do not try to work around it.\n' >>"$out"
@@ -107,6 +114,10 @@ if [ "$lint_missing" = "true" ]; then
 elif [ "$lint_gate" = "true" ]; then
   printf '\n== SwiftLint (lintBlocking) ==\n' >>"$out"
   recheck_lint >>"$out" || { [ "$status" -ne 0 ] || status=1; }
+fi
+if [ "$run_contracts" = "true" ]; then
+  printf '\n== Architecture contracts ==\n' >>"$out"
+  "$(dirname "$0")/contracts.sh" "$SH_ROOT" >>"$out" 2>&1 || { [ "$status" -ne 0 ] || status=1; }
 fi
 
 if [ "$status" -eq 0 ]; then

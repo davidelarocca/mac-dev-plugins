@@ -21,6 +21,13 @@ if git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     printf '%s' "$fp" > "$state/baseline"
     printf '0' > "$state/failures"
     rm -f "$state/verified" # pre-1.0.1 name of the baseline file
+    # The contract as it was at session start, for contract-watch.sh (#13).
+    rm -f "$state/contract-start.json" "$state/contract-start.none" "$state/contract-warned"
+    if [ -f "$SH_ROOT/$SH_CONTRACT" ]; then
+      cp "$SH_ROOT/$SH_CONTRACT" "$state/contract-start.json"
+    else
+      : >"$state/contract-start.none"
+    fi
     if [ -n "$fp" ] && [ "$fp" = "$(cat "$state/failed" 2>/dev/null)" ]; then
       echo "swift-harness: the last verification ('$verify_cmd') failed on the current code and has not passed since. Treat the project as not verified."
     fi

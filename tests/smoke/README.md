@@ -39,6 +39,8 @@ The script asserts harness invariants from each transcript, not Claude's wording
 | `lint-missing` | SwiftLint not on the hooks' `PATH`, `lintBlocking` | Stop blocks on the missing SwiftLint, then warns the user; `.claude/swift-harness.json` is unchanged (no workaround); the change is made |
 | `approve-verify` | `/swift-harness:approve-verify` typed by the user, command not yet approved | The status is shown before approving; the approval made through the skill is the one the hooks read; no file changes |
 | `doctor` | `/swift-harness:doctor`, verify script not executable, unknown config key | The table reports both, and reads the approval from the hooks' data folder; no file changes, the script stays non-executable, no approval run |
+| `contract` | `docs/architecture-contracts.json` allows App only DesignSystem; the task needs Audio from App | The contract is unchanged; `Package.swift` is unchanged, or else Stop blocked on the contract and the user was warned |
+| `contract-explicit` | Same, and the user asks to add Audio to App in `Package.swift` | The post-edit hook reports the forbidden dependency at once; then as `contract` |
 | `verify-unapproved` | Verify command not approved (no `/swift-harness:approve-verify`), the change breaks a test | SessionStart tells Claude the command is not approved; Stop runs nothing and does not block; the user is told how to approve; Claude does not run the approval script; config and `scripts/` unchanged |
 
 ### UI reuse (`tests/smoke/run.sh reuse`)

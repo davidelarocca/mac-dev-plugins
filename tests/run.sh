@@ -653,7 +653,8 @@ expect_row "doctor: shows the plugin version" "$out" PASS 'swift-harness' '[0-9]
 expect_row "doctor: config is valid" "$out" PASS 'Config' ''
 expect_row "doctor: verify script configures a package" "$out" PASS 'Verify script' 'Packages/Core'
 expect_row "doctor: approved verify command" "$out" PASS 'Verify approval' ''
-expect_row "doctor: SwiftPM packages reported for architecture contracts" "$out" INFO 'Project structure' 'Packages/Core'
+expect_row "doctor: SwiftPM packages reported" "$out" INFO 'Project structure' 'Packages/Core'
+expect_row "doctor: packages without a contract suggest one" "$out" INFO 'Architecture contracts' 'none: add docs/architecture-contracts\.json'
 expect_row "doctor: no verification recorded yet" "$out" INFO 'Last verification' ''
 if [ "$before" = "$after" ]; then ok "doctor: changes no file in the project or the plugin data folder"
 else nok "doctor: changes no file in the project or the plugin data folder" "$(diff <(echo "$before") <(echo "$after") | head)"; fi
@@ -703,7 +704,7 @@ expect_row "doctor: swift-format without .swift-format is a warning" "$out" WARN
 set_config "$P" '{"format":"none","lint":"swiftlint","lintBlocking":false}'
 out="$(PATH="$NOLINT:/usr/bin:/bin" SWIFT_HARNESS_EXTRA_PATH='' CLAUDE_PLUGIN_DATA="$TMP/data" "$SCRIPTS/doctor.sh" "$P" 2>&1)"
 expect_row "doctor: missing SwiftLint without lintBlocking is a warning" "$out" WARN 'SwiftLint' 'brew install swiftlint'
-expect_row "doctor: single target explains architecture contracts" "$out" INFO 'Project structure' 'SwiftPM'
+expect_row "doctor: no package explains architecture contracts" "$out" INFO 'Architecture contracts' 'no SwiftPM package'
 
 out="$(CLAUDE_PLUGIN_DATA='' "$SCRIPTS/doctor.sh" "$P" 2>&1)"
 expect_row "doctor: without the plugin data folder, approval is unknown" "$out" WARN 'Verify approval' 'swift-harness:doctor'
@@ -892,6 +893,174 @@ expect_verify "verify.sh full: SwiftLint alone is not a verification" 1 'NOT CON
 V="$(verify_project full-scheme '-project App.xcodeproj' App '')"
 expect_verify "verify.sh full: tests plus lint pass" 0 'verify full: PASS' "$(run_verify "$V" full)"
 expect_verify "verify.sh full: failing lint fails" 1 'verify full: FAIL' "$(FAKE_SWIFTLINT_EXIT=2 run_verify "$V" full)"
+
+# ---------- architecture contracts (#13) ----------
+# Real `swift package dump-package` on tests/fixtures/contracts: it reads the manifest
+# without building or fetching anything.
+
+if ! command -v swift >/dev/null 2>&1; then
+  nok "contracts: swift not found, the architecture contract tests need Xcode"
+else
+
+contracts_project() { # $1 name; a copy of the fixture, opted in, verify command approved
+  local p="$TMP/$1"
+  cp -R "$HERE/fixtures/contracts" "$p"
+  mkdir -p "$p/.claude" "$p/scripts"
+  printf '%s\n' '{"verify":{"command":"scripts/verify.sh fast","maxAttempts":3}}' >"$p/.claude/swift-harness.json"
+  printf '#!/bin/bash\necho "fake verify output"\nexit "${FAKE_VERIFY_EXIT:-0}"\n' >"$p/scripts/verify.sh"
+  chmod +x "$p/scripts/verify.sh"
+  printf '.build/\n' >"$p/.gitignore"
+  git -C "$p" init -q
+  git -C "$p" config user.email test@example.com
+  git -C "$p" config user.name test
+  git -C "$p" add -A
+  git -C "$p" commit -qm init
+  approve "$p" >/dev/null
+  printf '%s' "$p"
+}
+check_contracts() { # $1 project; prints "exit=<code>" then the output
+  local out code
+  out="$("$SCRIPTS/contracts.sh" "$1" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+# $1 project, $2 jq filter applied to the contract
+edit_contract() {
+  local f="$1/docs/architecture-contracts.json"
+  jq "$2" "$f" >"$f.tmp" && mv "$f.tmp" "$f"
+}
+# $1 project, $2 target, $3 dependency written as in Package.swift: add it first in the list
+add_dependency() {
+  sed -i '' "s|\.target(name: \"$2\", dependencies: \[|.target(name: \"$2\", dependencies: [$3, |" "$1/Package.swift"
+}
+
+C="$(contracts_project contracts-ok)"
+expect_result "contracts: the fixture's graph matches its contract" 0 '^exit=0' "$(check_contracts "$C")" 'depends on'
+expect_result "contracts: test targets are not checked unless listed" 0 '^exit=0' "$(check_contracts "$C")" 'AppTests'
+
+C="$(contracts_project contracts-forbidden)"
+add_dependency "$C" Domain '"DesignSystem"'
+expect_result "contracts: a forbidden dependency fails, naming the target and the dependency" 1 'Package\.swift: target "Domain" depends on "DesignSystem"' "$(check_contracts "$C")"
+expect_result "contracts: the failure says how a new dependency gets approved" 1 'ADR' "$(check_contracts "$C")"
+
+C="$(contracts_project contracts-target-form)"
+add_dependency "$C" Services '.target(name: "Features")'
+expect_result "contracts: .target(name:) dependencies are checked" 1 'target "Services" depends on "Features"' "$(check_contracts "$C")"
+
+C="$(contracts_project contracts-product)"
+edit_contract "$C" '.packages["."].Domain = []'
+expect_result "contracts: external products are named package/product" 1 'target "Domain" depends on "swift-collections/Collections"' "$(check_contracts "$C")"
+
+C="$(contracts_project contracts-new-target)"
+sed -i '' 's|        .target(name: "DesignSystem"),|        .target(name: "DesignSystem"),\
+        .target(name: "Analytics", dependencies: ["Domain"]),|' "$C/Package.swift"
+mkdir -p "$C/Sources/Analytics" && echo 'enum A {}' >"$C/Sources/Analytics/A.swift"
+expect_result "contracts: a target missing from the contract fails" 1 'target "Analytics" is not in the contract' "$(check_contracts "$C")"
+
+C="$(contracts_project contracts-test-listed)"
+edit_contract "$C" '.packages["."].AppTests = ["App"]'
+expect_result "contracts: a listed test target is checked" 1 'target "AppTests" depends on "Domain"' "$(check_contracts "$C")"
+
+C="$(contracts_project contracts-stale)"
+edit_contract "$C" '.packages["."].Legacy = []'
+expect_result "contracts: a contract entry with no target is reported, not failed" 0 'Legacy.*no such target' "$(check_contracts "$C")"
+
+C="$(contracts_project contracts-bad-json)"
+printf '{"version": 1, "packages": {' >"$C/docs/architecture-contracts.json"
+expect_result "contracts: invalid JSON fails clearly" 1 'not valid JSON' "$(check_contracts "$C")"
+printf '{"version": 2, "packages": {}}' >"$C/docs/architecture-contracts.json"
+expect_result "contracts: an unknown version fails" 1 'version' "$(check_contracts "$C")"
+printf '{"version": 1, "packages": {".": {"App": "Features"}}}' >"$C/docs/architecture-contracts.json"
+expect_result "contracts: a dependency list that is not a list of names fails" 1 'list of names' "$(check_contracts "$C")"
+printf '{"version": 1, "packages": {"Packages/Missing": {}}}' >"$C/docs/architecture-contracts.json"
+expect_result "contracts: a package folder without Package.swift fails" 1 'Packages/Missing.*no Package\.swift' "$(check_contracts "$C")"
+
+C="$(contracts_project contracts-broken-manifest)"
+printf 'this is not swift\n' >>"$C/Package.swift"
+expect_result "contracts: a manifest that does not load fails with the error" 1 'could not read Package\.swift' "$(check_contracts "$C")"
+
+C="$(contracts_project contracts-subfolder)"
+mkdir -p "$C/Packages/Core"
+mv "$C/Package.swift" "$C/Sources" "$C/Tests" "$C/Packages/Core/"
+edit_contract "$C" '.packages = {"Packages/Core": .packages["."]}'
+add_dependency "$C/Packages/Core" Domain '"Services"'
+expect_result "contracts: a package in a subfolder is named by its path" 1 'Packages/Core/Package\.swift: target "Domain" depends on "Services"' "$(check_contracts "$C")"
+
+C="$(contracts_project contracts-none)"
+rm "$C/docs/architecture-contracts.json"
+expect_result "contracts: no contract file means nothing to check" 0 '^exit=0$' "$(check_contracts "$C")"
+
+# --- in the hooks ---
+
+cstop() { # $1 project; prints "exit=<code>" then stdout+stderr
+  local out code
+  out="$(hook stop-verify.sh "$1" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+
+C="$(contracts_project contracts-stop)"
+hook session-start.sh "$C" '{"source":"startup"}' >/dev/null
+add_dependency "$C" Domain '"DesignSystem"'
+out="$(cstop "$C")"
+expect_result "stop: a forbidden dependency blocks the turn, with verify passing" 2 'target "Domain" depends on "DesignSystem"' "$out"
+expect_result "stop: the contracts are named in the failure header" 2 'scripts/verify\.sh fast \+ architecture contracts' "$out"
+git -C "$C" checkout -q Package.swift
+echo '// changed' >>"$C/Sources/Domain/Domain.swift"
+expect_result "stop: an allowed change passes" 0 '^exit=0' "$(cstop "$C")" 'depends on'
+edit_contract "$C" '.packages["."].App = ["Features"]'
+expect_result "stop: a contract change alone is checked again" 2 'target "App" depends on "DesignSystem"' "$(cstop "$C")"
+
+C="$(contracts_project contracts-stop-unapproved)"
+hook session-start.sh "$C" '{"source":"startup"}' >/dev/null
+echo '# changed after approval' >>"$C/scripts/verify.sh"
+add_dependency "$C" Domain '"DesignSystem"'
+expect_result "stop: without the verify approval the manifest is not run" 0 '^exit=0' "$(cstop "$C")" 'depends on'
+
+C="$(contracts_project contracts-post-edit)"
+add_dependency "$C" Domain '"DesignSystem"'
+expect_result "post-edit: a forbidden dependency in Package.swift is reported at once" 2 'target "Domain" depends on "DesignSystem"' "$(post_edit "$C" "$C/Package.swift")"
+expect_result "post-edit: other Swift files do not run the contract check" 0 '^exit=0' "$(post_edit "$C" "$C/Sources/Domain/Domain.swift")" 'depends on'
+git -C "$C" checkout -q Package.swift
+expect_result "post-edit: an allowed Package.swift passes" 0 '^exit=0' "$(post_edit "$C" "$C/Package.swift")" 'depends on|contract'
+add_dependency "$C" Domain '"DesignSystem"'
+echo '# changed after approval' >>"$C/scripts/verify.sh"
+expect_result "post-edit: without the verify approval the manifest is not run" 0 '^exit=0' "$(post_edit "$C" "$C/Package.swift")" 'depends on'
+
+C="$(contracts_project contracts-doctor)"
+out="$(doctor "$C")"
+expect_row "doctor: a valid contract with the approved command is checked" "$out" PASS 'Architecture contracts' '1 package\(s\), 5 target\(s\)'
+if [ ! -e "$C/.build" ]; then ok "doctor: does not run the manifest"; else nok "doctor: does not run the manifest" "$(ls -a "$C/.build")"; fi
+echo '# changed after approval' >>"$C/scripts/verify.sh"
+expect_row "doctor: a contract without the approval is not checked" "$(doctor "$C")" WARN 'Architecture contracts' 'not checked'
+printf '{"version": 1, "packages": {"Packages/Missing": {}}}' >"$C/docs/architecture-contracts.json"
+expect_row "doctor: a contract package folder that does not exist fails" "$(doctor "$C")" FAIL 'Architecture contracts' 'Packages/Missing'
+printf '{"version": 1' >"$C/docs/architecture-contracts.json"
+expect_row "doctor: an invalid contract fails" "$(doctor "$C")" FAIL 'Architecture contracts' 'not valid JSON'
+
+cwatch() { # $1 project
+  local out code
+  out="$(hook contract-watch.sh "$1" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+C="$(contracts_project contracts-watch)"
+hook session-start.sh "$C" '{"source":"startup"}' >/dev/null
+expect_result "contract-watch: an unchanged contract says nothing" 0 '^exit=0$' "$(cwatch "$C")"
+edit_contract "$C" '.packages["."].Domain += ["Services"]'
+expect_result "contract-watch: a new allowed dependency is shown to the user" 0 'systemMessage.*\+ Domain -> Services' "$(cwatch "$C")"
+expect_result "contract-watch: the same change is shown once" 0 '^exit=0$' "$(cwatch "$C")"
+edit_contract "$C" '.packages["."].App = ["Features"]'
+expect_result "contract-watch: a removed dependency is shown too" 0 '\- App -> DesignSystem' "$(cwatch "$C")"
+rm "$C/docs/architecture-contracts.json"
+expect_result "contract-watch: a deleted contract is shown" 0 'deleted' "$(cwatch "$C")"
+C="$(contracts_project contracts-watch-new)"
+rm "$C/docs/architecture-contracts.json"
+hook session-start.sh "$C" '{"source":"startup"}' >/dev/null
+cp "$HERE/fixtures/contracts/docs/architecture-contracts.json" "$C/docs/"
+expect_result "contract-watch: a contract created in the session is shown" 0 'created' "$(cwatch "$C")"
+
+fi
 
 # ---------- summary ----------
 
