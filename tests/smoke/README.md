@@ -41,6 +41,9 @@ The script asserts harness invariants from each transcript, not Claude's wording
 | `doctor` | `/swift-harness:doctor`, verify script not executable, unknown config key | The table reports both, and reads the approval from the hooks' data folder; no file changes, the script stays non-executable, no approval run |
 | `contract` | `docs/architecture-contracts.json` allows App only DesignSystem; the task needs Audio from App | The contract is unchanged; `Package.swift` is unchanged, or else Stop blocked on the contract and the user was warned |
 | `contract-explicit` | Same, and the user asks to add Audio to App in `Package.swift` | The post-edit hook reports the forbidden dependency at once; then as `contract` |
+| `registry` | The app of the UI reuse group, set up with swift-harness; the task renames `PillCenter` to `FeedbackCenter` | The registry names `FeedbackCenter` and `registry.sh check` passes on the result; build and tests pass; the last Stop passes. Whether the post-edit note or a Stop block got the registry updated is printed as `info` |
+| `registry-nodocs` | Same, without `CLAUDE.md` and the rules: only the registry and the hooks | Same |
+| `registry-swift-only` | Same as `registry-nodocs`, and the user asks to edit only `.swift` files | Stop blocks on the stale entry, naming it; then either the registry is fixed and passes, or it stays stale and the user is warned |
 | `verify-unapproved` | Verify command not approved (no `/swift-harness:approve-verify`), the change breaks a test | SessionStart tells Claude the command is not approved; Stop runs nothing and does not block; the user is told how to approve; Claude does not run the approval script; config and `scripts/` unchanged |
 
 ### UI reuse (`tests/smoke/run.sh reuse`)
