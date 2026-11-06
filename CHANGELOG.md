@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## swift-harness 1.4.0 (2026-11-06)
+
+Visual coherence: screens that hold up at every window size, reviewed as they look, and shared components compared with images you approved. **Upgrading:** nothing needs a change; the layout contract, screenshots and snapshot tests are opt-in through `/swift-harness:setup`. Two things apply to every project: a folder named `snapshots/` at the repo root (or `snapshots.path`) is now guarded (edits ask first, changes without approval are reported at the end of the turn) and counts as a build input. If your project uses that name for something else, set `snapshots.path` to another folder.
 
 - New: a layout contract for window sizes ([#34](https://github.com/davidelarocca/swift-harness/issues/34)). `docs/LAYOUT_CONTRACT.md` gives each main screen its Min, Default and Max size, a width below which it switches to a compact layout, and the popovers and windows it opens. The setup template `tests/LayoutContract.swift` measures each screen in the project's own tests with `NSHostingController.sizeThatFits(in:)`: it fails when the content needs more room than a size gives ("at 560x400 it needs 857 pt of width"), when a window declares a smaller minimum than Min (it can shrink to nothing) or a larger one, and when it grows past Max. At the end of each turn `scripts/layout.sh` checks the contract is true: views and windows exist, every one is measured by a test, sizes are sizes. It reads text only, so it runs without the verify approval. Claude gets the sizes after editing a screen's file; `setup`, `ui-change`, the UI rule and `ui-reviewer` use the contract. New config keys `layout.enabled` and `layout.path`. Truncation, overlaps and where popovers open are not measured: they stay in review.
 - Fixed: a component registry without an ID column (documented as optional) failed the end-of-turn check with "the File cell is empty". Empty cells were merged when the rows were read; they are now kept.
