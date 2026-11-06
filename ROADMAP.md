@@ -2,7 +2,7 @@
 
 Where swift-harness is going, and why. Live status is in the [milestones](https://github.com/davidelarocca/swift-harness/milestones) and [issues](https://github.com/davidelarocca/swift-harness/issues). This page is updated with every release.
 
-_Last updated: 6 November 2026, after v1.3.1._
+_Last updated: 6 November 2026, after v1.3.1 (screenshot review merged, porting planned)._
 
 **Guiding principle:** every check the harness claims to run must actually run, and must be backed by a test. New features come after the existing gates are reliable, and claims about impact come with measurements.
 
@@ -13,7 +13,7 @@ Screens that hold up at every window size, reviewed as they look, not only as th
 | | What you get | Issue |
 |---|---|---|
 | 🪟 | **Window behavior.** Minimum, default and maximum sizes per main screen, rendered and checked at each size; popovers and secondary windows that stay inside a small window. | [#34](https://github.com/davidelarocca/swift-harness/issues/34) |
-| 👁️ | **Design review on screenshots.** The reviewer looks at the rendered UI (snapshots, previews, the running app) against the design system and the product map. | [#35](https://github.com/davidelarocca/swift-harness/issues/35) |
+| 👁️ | **Design review on screenshots.** The project's tests save images of each screen at its contract sizes, light and dark; the reviewer looks at them for alignment, spacing, hierarchy and truncation. Merged. | [#35](https://github.com/davidelarocca/swift-harness/issues/35) |
 | 🖼️ | **Visual regression for shared components.** Gallery and snapshot tests on a pinned macOS version; baselines change only with explicit approval. | [#9](https://github.com/davidelarocca/swift-harness/issues/9) |
 
 ## Then: v1.5.0, iOS and multiplatform
@@ -23,6 +23,13 @@ The same harness for iOS, iPadOS and multiplatform Swift apps. Most of swift-har
 | | What you get | Issue |
 |---|---|---|
 | 📱 | **iOS and multiplatform projects.** Setup, doctor and the verify script detect the platforms and pick the right destination (simulator for iOS); UI skills and the reviewer apply each platform's conventions (Dynamic Type, safe areas, touch targets, size classes). Checked on a real iOS app before the README says so. | [#40](https://github.com/davidelarocca/swift-harness/issues/40) |
+| 🔍 | **Porting audit, read only.** `/swift-harness:port-to-ios` assesses a macOS app for iOS: what can be shared, what needs an adapter, what needs a product decision, and which target structure fits, with file evidence. It writes `docs/PORTING_PLAN.md` and nothing else. | [#47](https://github.com/davidelarocca/swift-harness/issues/47) |
+
+## Next: v1.6.0, assisted macOS to iOS porting
+
+| | What you get | Issue |
+|---|---|---|
+| 🍎➡️📱 | **Porting in verified slices.** After you accept the plan and the target structure: shared domain first, adapters for platform APIs, then one feature at a time, each built and tested on iOS and on the Mac, with results per platform. Checked on a real port. | [#48](https://github.com/davidelarocca/swift-harness/issues/48) |
 
 ## Later
 
