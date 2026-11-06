@@ -28,7 +28,8 @@ sh_layout_on && run_layout=true
 # Security settings (#32): entitlements, ATS and signing build settings read as text, compared
 # with the state the user approved; recorded at session start, so no approval of code is needed.
 run_security=false
-[ "$(sh_cfg '.security.enabled' 'true')" = "true" ] && [ -f "$state/security-approved" ] && run_security=true
+# Whenever a baseline exists: turning security.enabled off is itself a change to approve.
+[ -f "$state/security-approved" ] && run_security=true
 [ "$verify_enabled" = "true" ] || [ "$lint_gate" = "true" ] || [ "$lint_missing" = "true" ] || [ "$run_registry" = "true" ] || [ "$run_layout" = "true" ] || [ "$run_security" = "true" ] || exit 0
 
 command_line="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"

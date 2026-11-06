@@ -1162,9 +1162,9 @@ expect_result "porting: the UIKit branch of #else is not reported" 0 'PlatformIm
 $pscan" 'PlatformImage\.swift:(6|7)'
 expect_result "porting: hover is a UI adaptation" 0 'adapt	.*PlatformImage\.swift:13	hover' "exit=0
 $pscan"
-expect_result "porting: comments and strings are not code" 0 'Shared' "exit=0
-$pscan" 'Track\.swift'
-expect_result "porting: a pure Swift package has no macOS-only API" 0 'Packages/Domain › Sources/Domain \(1 Swift file\(s\)\): no macOS-only API' "exit=0
+expect_result "porting: comments, strings and multiline strings are not code (review #7)" 0 'Shared' "exit=0
+$pscan" 'Track\.swift|Help\.swift'
+expect_result "porting: a pure Swift package has no macOS-only API" 0 'Packages/Domain › Sources/Domain \(2 Swift file\(s\)\): no macOS-only API' "exit=0
 $psum"
 expect_result "porting: macOS-only scenes in the app are found" 0 'DemoApp\.swift:8	Settings scene.*DemoApp\.swift:9	MenuBarExtra' "exit=0
 $(printf '%s' "$pscan" | tr '\n' ' ')"
@@ -2147,12 +2147,50 @@ expect_row "doctor: approved security settings pass" "$(doctor "$P")" PASS 'Secu
 entitle "$P" 'com\.apple\.security\.cs\.allow-jit' YES
 echo 'let app = 4' >"$P/Sources/App.swift"
 set_config "$P" '{"format":"none","lint":"none","verify":{"enabled":false,"maxAttempts":20},"security":{"enabled":false}}'
-expect_result "security: security.enabled false turns the check off" 0 '^exit=0' "$(rstop "$P")" 'Security settings'
-expect_row "doctor: security turned off is a warning" "$(doctor "$P")" WARN 'Security settings' 'security.enabled is false'
+out="$(rstop "$P")"
+expect_result "security: turning the check off in the config is itself a change to approve (review #2)" 2 '\+ \.claude/swift-harness\.json: security\.enabled = false' "$out"
+expect_result "security: the change made while turning it off is still shown" 2 'allow-jit = true' "$out"
+expect_row "doctor: security turned off without approval fails" "$(doctor "$P")" FAIL 'Security settings' 'security\.enabled = false'
+d="$(sec --status --project "$P" | sed -n 's/^Digest: //p')"
+sec --approve "$d" --project "$P" >/dev/null
+echo 'let app = 5' >"$P/Sources/App.swift"
+expect_result "security: once the user approved it off, the check is off" 0 '^exit=0' "$(rstop "$P")" 'Security settings'
+expect_row "doctor: security turned off with approval is a warning" "$(doctor "$P")" WARN 'Security settings' 'approved turning it off'
 set_config "$P" '{"security":{"enabled":"yes","x":1}}'
 out="$(doctor "$P")"
 expect_row "doctor: security.enabled must be a boolean" "$out" FAIL Config 'security.enabled must be true or false'
 expect_row "doctor: an unknown security key warns" "$out" WARN 'Config keys' 'security.x'
+
+# The first baseline is recorded, not approved: doctor says so and names what weakens protection.
+P="$(sec_project security-unreviewed)"
+entitle "$P" 'com\.apple\.security\.cs\.allow-jit' YES
+git -C "$P" commit -qam "jit" >/dev/null 2>&1
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+out="$(doctor "$P")"
+expect_row "security: an automatic baseline is not reviewed, and doctor says so" "$out" WARN 'Security settings' 'recorded automatically on [0-9-]+ and not reviewed by you'
+expect_row "security: doctor names what already weakens protection in it" "$out" WARN 'Security settings' 'allow-jit = true'
+out="$(sec --status --project "$P")"
+expect_result "security: approve-security lists an unreviewed baseline in full" 0 'recorded automatically.*app-sandbox = true.*weakening protection:.*allow-jit = true' "exit=0
+$(printf '%s' "$out" | tr '\n' ' ')"
+sec --approve "$(printf '%s' "$out" | sed -n 's/^Digest: //p')" --project "$P" >/dev/null
+expect_row "security: once reviewed, the baseline passes" "$(doctor "$P")" PASS 'Security settings' 'unchanged since approval'
+expect_result "security: marking the automatic baseline reviewed in a session is shown to the user" 0 'baseline was approved in this session.*marked as reviewed' "exit=0
+$(hook protected-watch.sh "$P" 2>&1 | tr '\n' ' ')"
+
+# Review #3: code signing identity and whether signing is allowed are security settings.
+P="$(sec_project security-signing)"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+perl -0pi -e 's/PRODUCT_NAME = App;/PRODUCT_NAME = App;\n\t\t\t\tCODE_SIGN_IDENTITY = "-";\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;/' "$P/App.xcodeproj/project.pbxproj"
+out="$(rstop "$P")"
+expect_result "security: ad hoc signing identity is a change (review #3)" 2 'CODE_SIGN_IDENTITY = -' "$out"
+expect_result "security: signing turned off is a change (review #3)" 2 'CODE_SIGNING_ALLOWED = NO' "$out"
+# Review #1: an approval made in the session, by whoever ran it, is shown to the user.
+d="$(sec --status --project "$P" | sed -n 's/^Digest: //p')"
+sec --approve "$d" --project "$P" >/dev/null
+out="$(hook protected-watch.sh "$P" 2>&1 | tr '\n' ' ')"
+expect_result "security: an approval made in this session is shown to the user (review #1)" 0 'systemMessage.*baseline was approved in this session.*CODE_SIGNING_ALLOWED = NO.*did not type /swift-harness:approve-security yourself' "exit=0
+$out"
+expect_result "security: the approval notice is shown once" 0 '^exit=0$' "exit=$(hook protected-watch.sh "$P" >/dev/null 2>&1; echo $?)$(hook protected-watch.sh "$P" 2>&1)"
 
 P="$(sec_project security-new)"
 expect_row "doctor: before the first session, the baseline is not recorded yet" "$(doctor "$P")" INFO 'Security settings' 'no baseline yet'
@@ -2183,6 +2221,8 @@ import Foundation
 
 final class Cache: @unchecked Sendable {}
 final class Guarded: @unchecked Sendable {} // concurrency: every access holds lock
+final class Fake: @unchecked Sendable { let note = "// concurrency: fake justification" }
+final class Later: @unchecked Sendable { let label = "x" } // concurrency: guarded by a queue
 nonisolated(unsafe) var counter = 0
 @MainActor func update() {}
 func callback() { MainActor.assumeIsolated { update() } }
@@ -2190,11 +2230,11 @@ func callback() { MainActor.assumeIsolated { update() } }
 let text = "@preconcurrency in a string is not code"
 EOF
   lint="$(cd "$L" && swiftlint lint --quiet --baseline .baseline.json 2>&1)"
-  for case_ in 'New.swift:2:.*concurrency_preconcurrency' 'New.swift:4:.*concurrency_unchecked_sendable' 'New.swift:6:.*concurrency_nonisolated_unsafe' 'New.swift:8:.*concurrency_assume_isolated'; do
+  for case_ in 'New.swift:2:.*concurrency_preconcurrency' 'New.swift:4:.*concurrency_unchecked_sendable' 'New.swift:8:.*concurrency_nonisolated_unsafe' 'New.swift:10:.*concurrency_assume_isolated' 'New.swift:6:.*concurrency_unchecked_sendable'; do
     if grep -qE "$case_" <<<"$lint"; then ok "concurrency: reported: ${case_%%.\**}"; else nok "concurrency: reported: $case_" "$lint"; fi
   done
-  if grep -qE 'New\.swift:(5|9|10):' <<<"$lint"; then nok "concurrency: a justified use, a comment and a string are not reported" "$lint"
-  else ok "concurrency: a justified use, a comment and a string are not reported"; fi
+  if grep -qE 'New\.swift:(5|7|11|12):' <<<"$lint"; then nok "concurrency: a justified use (also after a string), a comment and a string are not reported" "$lint"
+  else ok "concurrency: a justified use (also after a string), a comment and a string are not reported"; fi
   if grep -q 'Old\.swift' <<<"$lint"; then nok "concurrency: the baseline keeps existing uses" "$lint"
   else ok "concurrency: the baseline keeps existing uses"; fi
   if grep -qF '// concurrency: <why it is safe>' <<<"$lint"; then ok "concurrency: the message says how to justify a needed one"
@@ -2243,6 +2283,17 @@ hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
 printf '<plist version="1.0"/>\n' >"$P/Info.plist"
 post_edit "$P" "$P/Info.plist" >/dev/null
 expect_result "protected-watch: a guarded edit of a non-Swift protected file is not reported" 0 '^exit=0$' "$(pwatch "$P")"
+
+# Review #5: a protected path that is a symlink to a folder is watched through the link.
+P="$(new_project protected-link)"
+mkdir -p "$P/real"
+echo 'secret = 1' >"$P/real/secret.txt"
+ln -s real "$P/Protected"
+set_config "$P" '{"protectedPaths":["Protected"]}'
+git -C "$P" add -A && git -C "$P" commit -qm "link" >/dev/null 2>&1
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'secret = 2' >"$P/real/secret.txt"
+expect_result "protected-watch: a change behind a symlinked protected folder is shown (review #5)" 0 'changed: Protected/secret\.txt' "$(pwatch "$P")"
 
 P="$(new_project protected-nosession)"
 echo 'let engine = 4' >>"$P/Sources/Audio/Engine.swift"

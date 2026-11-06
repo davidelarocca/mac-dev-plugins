@@ -50,6 +50,11 @@ if git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     # The security settings as they are the first time, the baseline the user can approve (#32).
     [ "$(sh_cfg '.security.enabled' 'true')" = "true" ] &&
       "$(dirname "$0")/security.sh" --record --project "$SH_ROOT" >/dev/null 2>&1
+    # The approved security state at session start: an approval made during the session is
+    # shown to the user at the end of the turn (protected-watch.sh), whoever ran it.
+    rm -f "$state/security-start" "$state/security-start-unreviewed" "$state/security-approval-warned"
+    [ -f "$state/security-approved" ] && cp "$state/security-approved" "$state/security-start"
+    [ -f "$state/security-unreviewed" ] && : >"$state/security-start-unreviewed"
     if [ -n "$fp" ] && [ "$fp" = "$(cat "$state/failed" 2>/dev/null)" ]; then
       echo "swift-harness: the last verification ('$verify_cmd') failed on the current code and has not passed since. Treat the project as not verified."
     fi
