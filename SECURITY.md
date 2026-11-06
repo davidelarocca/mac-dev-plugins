@@ -17,6 +17,7 @@ swift-harness runs local commands on your machine through Claude Code hooks. Kno
 | What runs | When | Where it comes from |
 |---|---|---|
 | `jq`, `git`, `shasum` | Every hook | Your system |
+| The plugin's `registry.sh`, which reads the component registry and Swift files as text | Before Claude ends a turn and after it edits a Swift file, when the registry exists. Runs nothing from the repository, so no approval | The plugin |
 | `swiftformat` or `swift-format`, `swiftlint` | After Claude edits a Swift file | Your system |
 | `verify.command` (default `scripts/verify.sh fast`) | Before Claude ends a turn, when build inputs changed, **and only after you approved it** | **The repository**: `.claude/swift-harness.json` and the script it points to |
 | `swift package dump-package`, which runs `Package.swift` | With `verify.command`, and after Claude edits a `Package.swift`, when `docs/architecture-contracts.json` exists, **only while the verify command is approved** | **The repository**: the package manifests named in the contract |
