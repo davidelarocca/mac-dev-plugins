@@ -8,5 +8,8 @@
     "maxAttempts": 3
   },
   "protectedPaths": ["{{PROTECTED_PATH}}"],
+  "registry": {
+    "sources": ["{{DESIGN_SYSTEM_PATH}}"]
+  },
   "guardPbxproj": true
 }

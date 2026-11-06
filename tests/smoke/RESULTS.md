@@ -2,6 +2,15 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-06, component registry (#7, branch `feat/registry-validation`)
+
+Claude Code 2.1.318, SwiftLint 0.65.1, Apple Swift 6.4.2. Default suite, now 16 scenarios: **all invariants pass**. 15 scenarios $2.34, then `registry-swift-only` added and run alone, $0.20. The component detection was extended to `Layout`, `Shape` and AppKit representables after the run; no scenario uses them.
+
+- `registry` and `registry-nodocs` (rename `PillCenter` to `FeedbackCenter`): in both, the post-edit note named entry UI-001 as soon as Claude edited `PillCenter.swift`, and Claude updated the registry in the same turn, also without `CLAUDE.md` and the rules. Stop never had to block.
+- `registry-swift-only` (the user allows only `.swift` edits): Stop blocked with `UI-001 PillCenter: PillCenter is not declared in Sources/DesignSystem/PillCenter.swift`. Claude kept to the instruction, stopped again, said the registry line was stale on purpose and asked whether to rename it; the user got the "still failing" warning.
+- The 13 earlier scenarios pass unchanged: the registry check runs in every one that has a registry (the reuse fixture), without effect.
+- Real code, read-only: `registry.sh missing` on the Components folder of a ~97k-line app found all 17 views there with no false positive. It missed a `Layout` and an `NSViewRepresentable`, which led to the extension above (19 of 19 after it). The whole UI module: 246 files in 1.4 s; one file, as after an edit, 0.05 s.
+
 ## 2026-11-06, product map (#30, branch `feat/product-map`)
 
 Claude Code 2.1.318, SwiftLint 0.65.1, Apple Swift 6.4.2. New `product` group, 3 scenarios, **one run each**: **12/12 checks** with the plugin, 5/6 in the baseline (reported, not counted), $0.96. A task manager with projects, tasks, a `Navigator` and a shared `TaskActionsMenu`; the task asks for a "Due Today" list on Home with each task's title and project name.

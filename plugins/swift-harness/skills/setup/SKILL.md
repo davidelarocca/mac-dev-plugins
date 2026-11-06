@@ -68,7 +68,8 @@ Rules for filling templates:
 - In `verify.sh`: `{{LOCAL_PACKAGES}}` becomes quoted paths (`"Packages/DesignSystem" "Packages/Domain"`) or nothing for `PACKAGES=()`; `{{SCHEME}}` and `{{XCODE_CONTAINER_FLAG}}` become empty strings for a packages-only project. At least one of the two must be set: with neither, the script reports `NOT CONFIGURED` and fails.
 - Keep CLAUDE.md under 100 lines. Link to docs, do not copy them.
 - If the project has existing hub and spoke docs, make `docs/ARCHITECTURE.md` the hub that links to them. Do not move or rewrite the existing docs in this step; list outdated ones as follow-ups.
-- Populate `COMPONENT_REGISTRY.md` only with components that really exist and are shared. Unknown or duplicated ones go in the "To consolidate" section. Do not invent entries.
+- Populate `COMPONENT_REGISTRY.md` only with components that really exist and are shared. Unknown or duplicated ones go in the "To consolidate" section, design system views not meant for reuse (galleries, building blocks) under "Internal". Do not invent entries. Keep the column headers: the end-of-turn check reads them, and fails when a File does not exist or does not declare its Name.
+- In `swift-harness.json`, `registry.sources` lists the design system folders (`{{DESIGN_SYSTEM_PATH}}`). Views, modifiers and styles declared there and missing from the registry are pointed out to Claude after each edit and to the user by `/swift-harness:doctor`. After populating the registry, list what it still misses with `"${CLAUDE_PLUGIN_ROOT}/scripts/registry.sh" missing .` and add those entries or list them under Internal.
 - Leave the `PRODUCT_MAP.md` tables empty: filling them needs `/swift-harness:product-map`, which reads the whole app.
 
 ## 5. Tooling check

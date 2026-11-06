@@ -27,7 +27,7 @@ TEMPLATES="$PLUGIN/skills/setup/templates"
 WORK="${SMOKE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/swift-harness-smoke.XXXXXX")}"
 WORK="$(mkdir -p "$WORK" && cd "$WORK" && pwd -P)"
 
-ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels lint-missing verify-unapproved approve-verify doctor contract contract-explicit"
+ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels lint-missing verify-unapproved approve-verify doctor contract contract-explicit registry registry-nodocs registry-swift-only"
 # Reuse of UI components (the skills, not the hooks), each with a baseline without the
 # plugin. Not in the default run: about $2 for the group. Run with `run.sh reuse`.
 REUSE_SCENARIOS="reuse-toast reuse-toast-bare reuse-toast-nocaller reuse-toast-nocaller-bare reuse-toast-undo reuse-toast-undo-bare"
@@ -295,6 +295,45 @@ scenario_contract_explicit() {
 check_contract_explicit() {
   expect "contract check fired after the Package.swift edit" has_hook PostToolUse 2 'target \"App\" depends on \"Audio\"'
   check_contract
+}
+
+# Component registry (#7): a rename makes the registry entry false. With the setup docs,
+# Claude is expected to update it in the same change; without CLAUDE.md and the rules
+# (registry-nodocs), the post-edit note and the Stop check are what keeps it true.
+scenario_registry() {
+  CONFIG="{$BASE_CONFIG,\"lintBlocking\":false}"
+  TASK='Rename the PillCenter type to FeedbackCenter everywhere. Keep the file name PillCenter.swift.'
+  SETUP="$FOUR_SPACES; reuse_fixture docs"
+}
+check_registry() {
+  expect "type renamed" not file_has Sources/DesignSystem/PillCenter.swift 'class PillCenter'
+  expect "registry names the new type" file_has docs/COMPONENT_REGISTRY.md '\| FeedbackCenter \|'
+  expect "registry check passes on the result" registry_passes
+  expect "build and tests pass" verifies
+  expect "last Stop passes" last_stop_passes
+  note "post-edit named the registry entry" has_hook PostToolUse 0 'UI-001 PillCenter'
+  note "Stop blocked on the registry" has_hook Stop 2 'Component registry'
+}
+scenario_registry_nodocs() {
+  scenario_registry
+  SETUP="$FOUR_SPACES; reuse_fixture docs; rm -rf CLAUDE.md .claude/rules"
+}
+check_registry_nodocs() { check_registry; }
+
+# The user limits the change to Swift files, so the registry stays stale: the Stop check
+# must catch it, and Claude must not hide it.
+scenario_registry_swift_only() {
+  scenario_registry_nodocs
+  TASK='Rename the PillCenter type to FeedbackCenter everywhere in the Swift code. Keep the file name PillCenter.swift. Only edit .swift files.'
+}
+check_registry_swift_only() {
+  expect "type renamed" not file_has Sources/DesignSystem/PillCenter.swift 'class PillCenter'
+  expect "Stop blocked on the stale registry entry" has_hook Stop 2 'UI-001 PillCenter: PillCenter is not declared'
+  if unchanged docs/COMPONENT_REGISTRY.md; then
+    expect "registry left stale: the user was warned at the end" has_hook Stop 0 'still failing'
+  else
+    expect "registry updated after the block: its check passes" registry_passes
+  fi
 }
 
 # The problem swift-harness exists for: a second, slightly different copy of a UI
@@ -793,6 +832,7 @@ ds_change_documented() { # passes in projects without a registry (baselines)
 map_updated() { # passes in projects without a product map (baseline)
   [ ! -f "$D/docs/PRODUCT_MAP.md" ] || ! unchanged docs/PRODUCT_MAP.md
 }
+registry_passes() { "$PLUGIN/scripts/registry.sh" check "$D" >/dev/null 2>&1; }
 verifies() { (cd "$D" && scripts/verify.sh fast >/dev/null 2>&1); }
 used_skill() {
   jq -se --arg re "$1" '[.[] | select(.type == "assistant") | .message.content[]?
