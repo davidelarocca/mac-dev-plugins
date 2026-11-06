@@ -46,16 +46,16 @@ state="$(sh_state_dir)" || {
 command_line="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
 
 status() {
-  local line kind word sha path
+  local line word sha path
   printf 'Project: %s\nCommand: %s\n' "$SH_ROOT" "$command_line"
   while IFS= read -r line; do
     case "$line" in
       file\ *)
-        read -r kind word sha <<<"$line"
+        read -r _ word sha <<<"$line"
         printf 'File: %s (sha256 %s)\n' "$word" "$sha"
         ;;
       input$'\t'*)
-        IFS=$'\t' read -r kind path sha <<<"$line"
+        IFS=$'\t' read -r _ path sha <<<"$line"
         case "$sha" in
           missing) printf 'Input: %s (missing: approving again is needed once it exists)\n' "$path" ;;
           outside) printf 'Input: %s (outside the project: not covered)\n' "$path" ;;
