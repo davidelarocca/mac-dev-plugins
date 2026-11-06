@@ -66,6 +66,9 @@ if [ -z "$checks" ]; then
   exit 0
 fi
 
+# The same checks already passed on this code without the verify command (SH130-01).
+[ "$(printf '%s\n%s' "$fp" "$checks")" = "$(cat "$state/checked" 2>/dev/null)" ] && exit 0
+
 # Re-lint the files that failed SwiftLint under lintBlocking. Prints the problems, keeps
 # only the files that still fail in the pending list, and returns 1 if any does.
 recheck_lint() {
@@ -134,8 +137,15 @@ if [ "$run_registry" = "true" ]; then
 fi
 
 if [ "$status" -eq 0 ]; then
-  # Without the verify command, a clean lint is not a passed verification.
-  [ "$verify_enabled" = "true" ] && [ "$run_verify" = "false" ] || printf '%s' "$fp" > "$state/passed"
+  # "passed" means the verify command ran and passed (SH130-01). Lint, contracts or the
+  # registry alone are recorded apart, with the checks that ran, so doctor can say so and an
+  # approval given later still runs the verify command on this code.
+  if [ "$run_verify" = "true" ]; then
+    printf '%s' "$fp" > "$state/passed"
+    rm -f "$state/checked"
+  else
+    printf '%s\n%s' "$fp" "$checks" > "$state/checked"
+  fi
   printf '0' > "$state/failures"
   rm -f "$state/failed" "$out"
   warn_unapproved

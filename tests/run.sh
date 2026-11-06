@@ -631,8 +631,8 @@ echo 'echo later' >"$P/scripts/later.sh"
 if grep -q '^Status: not approved' <<<"$(approval "$P" --status)"; then ok "approval: a verify.inputs file that appears needs a new approval"
 else nok "approval: a verify.inputs file that appears needs a new approval" "$(approval "$P" --status)"; fi
 set_config "$P" '{"verify":{"command":"scripts/verify.sh fast","inputs":["../outside.sh"]}}'
-if grep -q '^Input: \.\./outside.sh (outside the project' <<<"$(approval "$P" --status)"; then ok "approval: a verify.inputs path outside the project is refused"
-else nok "approval: a verify.inputs path outside the project is refused" "$(approval "$P" --status)"; fi
+if grep -q '^Input: \.\./outside.sh (outside the project' <<<"$(approval "$P" --status)"; then ok "approval: a verify.inputs path outside the project is shown as outside"
+else nok "approval: a verify.inputs path outside the project is shown as outside" "$(approval "$P" --status)"; fi
 
 # ---------- doctor.sh (#12) ----------
 
@@ -1382,6 +1382,114 @@ expect_row "doctor: registry.path must be a path" "$out" FAIL 'Config' 'registry
 rm "$R/$REG_FILE"
 set_config "$R" '{}'
 expect_row "doctor: no registry is explained" "$(doctor "$R")" INFO 'Component registry' 'none'
+
+# ---------- external audit of 1.3.0 (SH130) ----------
+
+# SH130-01: "passed" means the verify command ran and passed. Registry or lint alone is a
+# separate, weaker result, and doctor says which.
+P="$(registry_project sh130-01-off)"
+set_config "$P" '{"format":"none","lint":"none","verify":{"enabled":false}}'
+git -C "$P" add -A && git -C "$P" commit -qm off
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let app = 2' >"$P/Sources/App.swift"
+out="$(FAKE_VERIFY_LOG=/dev/null hook stop-verify.sh "$P" 2>&1)"
+expect_row "doctor: verify disabled and only the registry checked is not a passed verification" "$(doctor "$P")" WARN 'Last verification' 'build and tests were not run'
+if ! grep -qE '^\| PASS \| Last verification' <<<"$(doctor "$P")"; then ok "doctor: no 'passed' claim when only the registry ran"
+else nok "doctor: no 'passed' claim when only the registry ran" "$(doctor "$P")"; fi
+out="$(FAKE_VERIFY_LOG=/dev/null hook stop-verify.sh "$P" 2>&1; echo "exit=$?")"
+expect_result "stop: a registry-only result on unchanged code is not re-checked" 0 'exit=0' "$out" 'Component registry'
+
+P="$(registry_project sh130-01-unapproved)"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo '# changed' >>"$P/scripts/verify.sh"
+echo 'let app = 2' >"$P/Sources/App.swift"
+FAKE_VERIFY_LOG=/dev/null hook stop-verify.sh "$P" >/dev/null 2>&1
+expect_row "doctor: an unapproved verify command with the registry passing is not a passed verification" "$(doctor "$P")" WARN 'Last verification' 'build and tests were not run'
+approve "$P" >/dev/null
+LOG="$TMP/sh130-01.log"; : >"$LOG"
+FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT=0 hook stop-verify.sh "$P" >/dev/null 2>&1
+if [ "$(wc -l <"$LOG" | tr -d ' ')" = 1 ]; then ok "stop: approving the command later runs it on the code checked without it"
+else nok "stop: approving the command later runs it on the code checked without it" "runs=$(wc -l <"$LOG")"; fi
+expect_row "doctor: verify command, contracts and registry passing is a passed verification" "$(doctor "$P")" PASS 'Last verification' 'passed on the current code'
+
+# SH130-03: an input outside the project cannot be covered, so approval is refused.
+P="$(new_project sh130-03)"
+echo 'echo outside' >"$TMP/sh130-outside.sh"
+set_config "$P" '{"verify":{"command":"scripts/verify.sh fast","inputs":["../sh130-outside.sh"]}}'
+git -C "$P" add -A && git -C "$P" commit -qm outside
+approve_result() { local o c; o="$(approve "$1" 2>&1)"; c=$?; printf 'exit=%s\n%s' "$c" "$o"; }
+out="$(approve_result "$P")"
+expect_result "approval: refused while a verify.inputs path is outside the project" 1 'Nothing approved' "$out"
+expect_result "approval: the refusal names the outside input" 1 'sh130-outside\.sh \(outside the project' "$out"
+if grep -q '^Status: not approved' <<<"$(approval "$P" --status)"; then ok "approval: nothing is stored when refused"
+else nok "approval: nothing is stored when refused" "$(approval "$P" --status)"; fi
+
+# SH130-04: links inside a watched folder are covered by their target.
+P="$(new_project sh130-04)"
+mkdir -p "$P/tools" "$P/elsewhere"
+echo 'echo real' >"$P/elsewhere/real.sh"
+ln -s ../elsewhere/real.sh "$P/tools/run.sh"
+set_config "$P" '{"verify":{"command":"scripts/verify.sh fast","inputs":["tools"]}}'
+git -C "$P" add -A && git -C "$P" commit -qm links
+approve "$P" >/dev/null
+echo 'echo changed' >"$P/elsewhere/real.sh"
+if grep -q '^Status: not approved' <<<"$(approval "$P" --status)"; then ok "approval: a changed link target in a verify.inputs folder needs a new approval"
+else nok "approval: a changed link target in a verify.inputs folder needs a new approval" "$(approval "$P" --status)"; fi
+approve "$P" >/dev/null
+echo 'echo other' >"$P/elsewhere/other.sh"
+ln -sf ../elsewhere/other.sh "$P/tools/run.sh"
+if grep -q '^Status: not approved' <<<"$(approval "$P" --status)"; then ok "approval: a retargeted link in a verify.inputs folder needs a new approval"
+else nok "approval: a retargeted link in a verify.inputs folder needs a new approval" "$(approval "$P" --status)"; fi
+ln -sf "$TMP/sh130-outside.sh" "$P/tools/run.sh"
+expect_result "approval: refused while a link in a verify.inputs folder points outside the project" 1 'Nothing approved' "$(approve_result "$P")"
+
+# SH130-02: a command with quotes or shell syntax and no verify.inputs is approved with
+# partial coverage, and both the status and doctor say so.
+P="$(new_project sh130-02)"
+printf '#!/bin/bash\necho ok\n' >"$P/scripts/my verify.sh"
+set_config "$P" '{"verify":{"command":"bash \"scripts/my verify.sh\" fast"}}'
+git -C "$P" add -A && git -C "$P" commit -qm partial
+approve "$P" >/dev/null
+expect_result "approval: a command with shell syntax is approved with partial coverage" 0 '^Status: approved, partial coverage' "exit=0
+$(approval "$P" --status)"
+expect_row "doctor: partial coverage is a warning" "$(doctor "$P")" WARN 'Verify approval' 'partial coverage'
+set_config "$P" '{"verify":{"command":"bash \"scripts/my verify.sh\" fast","inputs":["scripts/my verify.sh"]}}'
+approve "$P" >/dev/null
+expect_result "approval: with verify.inputs the coverage is declared, not partial" 0 '^Status: approved$' "exit=0
+$(approval "$P" --status)"
+
+# SH130-05: doctor reads quoted package paths with spaces without running the script.
+P="$(new_project sh130-05)"
+mkdir -p "$P/Packages/My Package" "$P/Packages/Core"
+echo '// swift-tools-version:5.9' >"$P/Packages/My Package/Package.swift"
+echo '// swift-tools-version:5.9' >"$P/Packages/Core/Package.swift"
+printf '#!/bin/bash\nXCODE_CONTAINER=""\nSCHEME=""\nPACKAGES=("Packages/My Package" '"'"'Packages/Core'"'"')\n' >"$P/scripts/verify.sh"
+expect_row "doctor: quoted package paths with spaces are read correctly" "$(doctor "$P")" PASS 'Verify script' 'packages Packages/My Package, Packages/Core'
+printf '#!/bin/bash\nXCODE_CONTAINER=""\nSCHEME=""\nPACKAGES=("$ROOT/Packages/Core")\n' >"$P/scripts/verify.sh"
+expect_row "doctor: a package list it cannot read without running the script is not a failure" "$(doctor "$P")" WARN 'Verify script' 'cannot be read'
+
+# SH130-07: component detection edge cases.
+R="$(registry_project sh130-07)"
+cat >"$R/Sources/DesignSystem/Edge.swift" <<'EOF'
+import SwiftUI
+
+public struct MultiLine:
+    View
+{
+    public var body: some View { EmptyView() }
+}
+
+// struct Commented: View {}
+
+/*
+struct InBlockComment: View {}
+*/
+
+extension Badge: Equatable {}
+EOF
+out="$(registry missing "$R")"
+expect_result "registry: a conformance on the next line is detected" 0 'MultiLine	Sources/DesignSystem/Edge\.swift:3' "$out"
+expect_result "registry: declarations in comments and extensions are not components" 0 'MultiLine' "$out" 'Commented|InBlockComment|Badge'
 
 # ---------- summary ----------
 

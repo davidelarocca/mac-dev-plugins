@@ -243,8 +243,7 @@ sh_verify_manifest() {
     if [ -z "$rel" ]; then
       sha=outside
     elif [ -d "$SH_ROOT/$rel" ]; then
-      # Names and contents of every file in the folder, so added and removed files count.
-      sha="$(cd "$SH_ROOT/$rel" && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+      sha="$(sh_verify_folder "$rel")"
     elif [ -f "$SH_ROOT/$rel" ]; then
       sha="$(shasum -a 256 <"$SH_ROOT/$rel" | cut -d' ' -f1)"
     else
@@ -252,6 +251,29 @@ sh_verify_manifest() {
     fi
     printf 'input\t%s\t%s\n' "$input" "$sha"
   done < <(jq -r '.verify.inputs // [] | if type == "array" then .[] | strings else empty end' "$SH_CONFIG" 2>/dev/null)
+}
+
+# Digest of a verify.inputs folder: names and contents of every file, so added and removed
+# files count, and every link with its target and the content it points to (SH130-04).
+# "outside" when a link inside resolves outside the project, which cannot be covered.
+sh_verify_folder() {
+  local link
+  while IFS= read -r -d '' link; do
+    [ -n "$(sh_relpath "$SH_ROOT/$1/${link#./}")" ] || { printf 'outside'; return; }
+  done < <(cd "$SH_ROOT/$1" && find . -type l -print0)
+  (
+    cd "$SH_ROOT/$1" || exit
+    find . -type f -print0 | sort -z | xargs -0 shasum -a 256
+    find . -type l -print0 | sort -z | while IFS= read -r -d '' link; do
+      printf 'link %s -> %s %s\n' "$link" "$(readlink "$link")" "$(shasum -a 256 <"$link" 2>/dev/null | cut -d' ' -f1)"
+    done
+  ) | shasum -a 256 | cut -d' ' -f1
+}
+
+# SH130-02: a command with quotes or shell syntax and no verify.inputs may run files the
+# approval does not cover. Approved, but not fully covered.
+sh_verify_partial() {
+  sh_verify_unparsed "$1" && [ -z "$(jq -r '.verify.inputs // [] | if type == "array" then .[] | strings else empty end' "$SH_CONFIG" 2>/dev/null)" ]
 }
 
 sh_verify_digest() { sh_verify_manifest "$1" | shasum -a 256 | cut -d' ' -f1; }
