@@ -102,7 +102,7 @@ struct PillView: View {
 
 struct PillHost: ViewModifier {
     @Environment(PillCenter.self) private var center
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ReduceMotion private var reduceMotion
 
     func body(content: Content) -> some View {
         content
@@ -111,11 +111,8 @@ struct PillHost: ViewModifier {
                     PillView(pill: pill)
                         .padding(.top, Spacing.m)
                         .onTapGesture { center.dismiss() }
-                        .transition(
-                            reduceMotion
-                                ? AnyTransition.opacity
-                                : AnyTransition.move(edge: .top).combined(with: .opacity)
-                        )
+                        // Slides in from the top; a fade under Reduce Motion.
+                        .transition(Motion.moving(.move(edge: .top).combined(with: .opacity), reduced: reduceMotion))
                         .id(pill.id)
                 }
             }

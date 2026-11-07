@@ -31,7 +31,8 @@ See `references/Tokens.swift`. Rules:
 - Names describe intent (`Spacing.section`), not the value.
 - Typography builds on system text styles so Dynamic Type and accessibility keep working.
 - Colors are semantic names in the package asset catalog with light and dark variants, exposed as `Color.DS.surface` style accessors.
-- Motion tokens are `Animation` values. Respect Reduce Motion where an animation moves content.
+- Motion tokens are `Animation` values. Where an animation or a transition moves content (position, size, scale, a slide or move transition), read Reduce Motion with `@ReduceMotion private var reduceMotion` and go through `Motion.moving(_:reduced:)`: no animation, or a fade for a transition. A fade alone needs nothing. `@ReduceMotion` is the system setting unless `.environment(\.reduceMotionOverride, true)` is set, which is how tests and previews check the reduced version (SwiftUI's `accessibilityReduceMotion` is read-only). The SwiftLint rule `ds_motion_without_reduce` reports a moving `.transition(...)` that skips it, on one line only.
+- Keyboard: every action of a shared component works without a pointer (Return, Escape, arrows in lists, its Command shortcuts). Test it with `KeyboardCheck.swift` from the setup templates in the package tests.
 
 ## Shared presenters (pills, toasts, banners)
 

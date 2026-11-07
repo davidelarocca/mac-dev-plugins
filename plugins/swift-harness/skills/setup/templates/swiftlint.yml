@@ -83,6 +83,15 @@ custom_rules:
     severity: warning
     excluded: '{{DS_EXCLUDED_REGEX}}'
     excluded_match_kinds: [comment, doccomment]
+  # Reduce Motion (#52): a transition that moves content goes through the design system's
+  # Motion.moving(_:reduced:), which fades instead. Applies inside the design system too, where
+  # shared components animate. A transition split over several lines is not seen.
+  ds_motion_without_reduce:
+    name: "Moving transition without Reduce Motion"
+    regex: '\.transition\((?![^\n]*Motion\.moving\()[^\n]*(\.move\(|\.slide\b|\.push\(|\.offset\(|\.scale\b)'
+    message: "This transition moves content. Wrap it in Motion.moving(_:reduced:) with @ReduceMotion, so Reduce Motion gets a fade."
+    severity: warning
+    excluded_match_kinds: [comment, doccomment, string]
   # Concurrency escape hatches: each silences Swift's data race checks. A new one needs a
   # reason on the same line, `// concurrency: <why it is safe>`; the SwiftLint baseline keeps
   # the ones already there (swiftlint lint --write-baseline).

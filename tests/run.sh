@@ -2436,6 +2436,63 @@ if grep -qF 'has no reason' "$PLUGIN/skills/setup/templates/tests/AccessibilityA
   ok "accessibility: exceptions need a reason, and setup installs the helper"
 else nok "accessibility: exceptions need a reason, and setup installs the helper"; fi
 
+# ---------- keyboard, focus order and Reduce Motion (#52) ----------
+
+link_ok() { # $1 link, $2 template: the link resolves to the template file
+  [ "$(cd "$(dirname "$1")/$(dirname "$(readlink "$1")")" 2>/dev/null && pwd -P)/$(basename "$(readlink "$1")")" = "$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")" ]
+}
+if link_ok "$HERE/fixtures/keyboard/Tests/ComponentsTests/KeyboardCheck.swift" "$PLUGIN/skills/setup/templates/tests/KeyboardCheck.swift" &&
+  link_ok "$HERE/fixtures/accessibility/A11yFixtureUITests/FocusOrder.swift" "$PLUGIN/skills/setup/templates/tests/FocusOrder.swift"; then
+  ok "keyboard: the CI fixtures run the template helpers themselves"
+else nok "keyboard: the CI fixtures run the template helpers themselves"; fi
+if grep -qF '| `tests/KeyboardCheck.swift` |' "$PLUGIN/skills/setup/SKILL.md" && grep -qF '| `tests/FocusOrder.swift` |' "$PLUGIN/skills/setup/SKILL.md"; then
+  ok "keyboard: setup installs both helpers"
+else nok "keyboard: setup installs both helpers"; fi
+if grep -qF 'XCTSkip' "$PLUGIN/skills/setup/templates/tests/FocusOrder.swift" && grep -qF 'AppleKeyboardUIMode -int 2' "$HERE/../.github/workflows/ci.yml"; then
+  ok "keyboard: with Keyboard navigation off the focus order is skipped, not passed; CI turns it on"
+else nok "keyboard: with Keyboard navigation off the focus order is skipped, not passed; CI turns it on"; fi
+if grep -qF '@ReduceMotion private var reduceMotion' "$PLUGIN/skills/design-system/references/PillCenter.swift" &&
+  grep -qF 'reduceMotionOverride' "$PLUGIN/skills/design-system/references/Tokens.swift"; then
+  ok "motion: the shared presenter reads Reduce Motion through the overridable wrapper"
+else nok "motion: the shared presenter reads Reduce Motion through the overridable wrapper"; fi
+
+if ! command -v swiftlint >/dev/null 2>&1; then
+  printf 'skip  motion: swiftlint not installed, the template rule was not run\n'
+else
+  # Not under $TMP, for the same reason as the concurrency rules above.
+  L="$HERE/../.build/motion-test"
+  rm -rf "$L"
+  mkdir -p "$L/Sources"
+  sed 's/{{DS_EXCLUDED_REGEX}}/DesignSystem/' "$PLUGIN/skills/setup/templates/swiftlint.yml" >"$L/.swiftlint.yml"
+  cat >"$L/Sources/Panel.swift" <<'SWIFT'
+import SwiftUI
+
+struct Panel: View {
+    @State private var open = false
+    var reduceMotion = false
+    var body: some View {
+        VStack {
+            if open { Text("a").transition(.move(edge: .top)) }
+            if open { Text("b").transition(.slide) }
+            if open { Text("c").transition(.scale.combined(with: .opacity)) }
+            if open { Text("d").transition(Motion.moving(.move(edge: .top), reduced: reduceMotion)) }
+            if open { Text("e").transition(.opacity) }
+            // A comment about .transition(.move(edge: .top)) is not code.
+            Text(".transition(.slide) in a string")
+        }
+    }
+}
+SWIFT
+  lint="$(cd "$L" && swiftlint lint --quiet 2>&1 | grep ds_motion_without_reduce)"
+  for n in 8 9 10; do
+    if grep -qE "Panel\.swift:$n:.*ds_motion_without_reduce" <<<"$lint"; then ok "motion: a moving transition without Motion.moving is reported (line $n)"
+    else nok "motion: a moving transition without Motion.moving is reported (line $n)" "$lint"; fi
+  done
+  if grep -qE 'Panel\.swift:(11|12|13|14):' <<<"$lint"; then nok "motion: Motion.moving, a fade, a comment and a string are not reported" "$lint"
+  else ok "motion: Motion.moving, a fade, a comment and a string are not reported"; fi
+  rm -rf "$L"
+fi
+
 # ---------- summary ----------
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
