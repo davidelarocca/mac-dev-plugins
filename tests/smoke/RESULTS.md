@@ -2,6 +2,13 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-07, per-session state (#61, branch `feat/per-session-state-61`)
+
+Claude Code 2.1.319, SwiftLint 0.65.1, Apple Swift 6.4.2, macOS 27. Every hook that keeps session state changed, so the scenarios that exercise it: `stop-fails`, `contract`, `security`, `snapshot-copy`, `verify-unapproved`, **one run each**, 0 failed invariants (20 checks), $0.74.
+
+- Real sessions write their lists under `sessions/<session_id>/` (UUIDs from Claude Code), and the end-of-turn block, the contract notice, the security block and the snapshot notice behave as before.
+- Two sessions on one folder at the same time are not run here (`claude -p` sessions run one after the other in separate fixtures); `tests/run.sh` covers it with two session ids.
+
 ## 2026-11-07, security settings, protected paths, checkpoint (#32, #11, #10; branch `feat/security-contract-32`)
 
 Claude Code 2.1.319, SwiftLint 0.65.1, Apple Swift 6.4.2, macOS 27. Default run plus the new `security` group and the `snapshots` group (the end-of-turn notice hook changed): 21 scenarios, **one run each**, 0 failed invariants, $3.63.

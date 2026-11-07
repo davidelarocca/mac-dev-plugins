@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: two sessions on one folder shared their starting lists ([#61](https://github.com/davidelarocca/swift-harness/issues/61), found in an adversarial review of #11 and #32). The hooks kept what a session compares with at the end of each turn in one folder per project path, so a second Claude Code session started in the same folder replaced the first session's lists, and a change the first session made through the shell before that moment was no longer reported to it. What a session started with (the code baseline, protected files, snapshot baselines, the architecture contract, the approved security settings, the session's head and changed files for the checkpoint) and the notices it already showed now live in a folder per `session_id`. Approvals, the security baseline, the last verification result and the files pending under `lintBlocking` stay per project, shared on purpose. An edit you were asked about and an approved snapshot count for every session open on the project. Session folders untouched for 14 days are removed at session start. Separate git worktrees were never affected. **Upgrading:** nothing to do; the first session after the update moves to the new layout.
+
 ## swift-harness 1.5.0 (2026-11-07)
 
 iOS-aware checks, a read-only porting audit for macOS apps, and new guardrails: security settings that only you approve, concurrency escape hatches that need a reason, shell changes to protected files reported, a checkpoint after compaction, and an accessibility audit for UI tests. Checked with 469 hook tests, a CI job on an iPhone simulator, real UI tests on macOS 26 and 27, 21 smoke scenarios in real Claude Code sessions, an adversarial review, and a porting run on a real ~97k-line app.
