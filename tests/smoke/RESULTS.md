@@ -2,6 +2,18 @@
 
 Newest first. Record the plugin version, the tool versions, the invariants result and anything notable in Claude's behaviour.
 
+## 2026-11-07, docs references (#70, branch `feat/docs-references-70`)
+
+Claude Code 2.1.319, SwiftLint 0.65.1, Apple Swift 6.4.2, macOS 27. New Stop hook `docs-watch.sh`, new `docs` group (also in the default run): 2 scenarios, **one run each**, all invariants pass, $0.25. The fixture's `CLAUDE.md` and `docs/ARCHITECTURE.md` name `Sources/App/Greeting.swift`; `CLAUDE.md` also links to a doc missing before the session.
+
+| Scenario | Result | Cost |
+|---|---|---|
+| `docs-rename`: rename the file with `git mv` | Claude found and updated both references on its own; the Stop never blocked; the missing doc from before the session never blocked | $0.15 |
+| `docs-rename-only`: the same, "do only the rename" | The Stop blocked once with `CLAUDE.md:5: \`Sources/App/Greeting.swift\` does not exist`; Claude kept to the user's limit, named both lines and offered to update them; the user was told at the end that the references are still broken | $0.10 |
+
+- The block did not override the user's instruction: Claude stopped again without editing, and the hook let it, as designed.
+- n=1 per scenario on one small fixture.
+
 ## 2026-11-07, per-session state (#61, branch `feat/per-session-state-61`)
 
 Claude Code 2.1.319, SwiftLint 0.65.1, Apple Swift 6.4.2, macOS 27. Every hook that keeps session state changed, so the scenarios that exercise it: `stop-fails`, `contract`, `security`, `snapshot-copy`, `verify-unapproved`, **one run each**, 0 failed invariants (20 checks), $0.74.

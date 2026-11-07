@@ -58,6 +58,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/protected-watch.sh\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/docs-watch.sh\"",
+            "timeout": 30
           }
         ]
       }

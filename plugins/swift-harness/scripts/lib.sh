@@ -164,6 +164,15 @@ sh_registry_on() { [ "$(sh_cfg '.registry.enabled' 'true')" = "true" ] && [ -f "
 sh_layout() { local p; p="$(sh_cfg '.layout.path' 'docs/LAYOUT_CONTRACT.md')"; printf '%s' "${p#./}"; }
 sh_layout_on() { [ "$(sh_cfg '.layout.enabled' 'true')" = "true" ] && [ -f "$SH_ROOT/$(sh_layout)" ]; }
 
+# Docs references (#70), checked by docs.sh at the end of each turn (docs-watch.sh) and by
+# doctor. Not part of the fingerprint: it reads Markdown only, so a docs edit never re-runs the
+# build. sh_docs_keys turns its problem lines into keys without line numbers (and without the
+# sizes of the session budget), so a problem that only moved is not new.
+sh_docs_on() { [ "$(sh_cfg '.docs.enabled' 'true')" = "true" ]; }
+sh_docs_keys() {
+  grep '^- ' | sed -E 's/^- ([^:]+):[0-9]+: /\1: /; s/: the files read into every session are .*/: the files read into every session are over the budget/' | LC_ALL=C sort -u
+}
+
 # Approved snapshot baselines (#9): compared by the project's tests, written only by
 # /swift-harness:approve-snapshots. Part of the fingerprint: a changed baseline changes the
 # test result. New images wait in SH_SNAPSHOT_CANDIDATES.

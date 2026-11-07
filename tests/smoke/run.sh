@@ -15,6 +15,7 @@
 #        tests/smoke/run.sh layout             (the layout contract scenarios and their baselines)
 #        tests/smoke/run.sh visual             (ui-reviewer with and without screenshots, 3 runs each)
 #        tests/smoke/run.sh snapshots          (approved snapshot baselines under a change)
+#        tests/smoke/run.sh docs               (docs references after a rename)
 #   SMOKE_DIR=<dir>    where repos and transcripts go (default: a new temp dir)
 #   SMOKE_MODEL=<id>   model for the sessions (default: Claude Code's default)
 #   SMOKE_CHECK_ONLY=1 only re-check the transcripts and repos already in SMOKE_DIR
@@ -30,7 +31,7 @@ TEMPLATES="$PLUGIN/skills/setup/templates"
 WORK="${SMOKE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/swift-harness-smoke.XXXXXX")}"
 WORK="$(mkdir -p "$WORK" && cd "$WORK" && pwd -P)"
 
-ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels lint-missing verify-unapproved approve-verify doctor contract contract-explicit registry registry-nodocs registry-swift-only security"
+ALL_SCENARIOS="guard broken-config stop-fails report-no-token legacy-violation clean-lint formatter-labels lint-missing verify-unapproved approve-verify doctor contract contract-explicit registry registry-nodocs registry-swift-only security docs-rename docs-rename-only"
 # Reuse of UI components (the skills, not the hooks), each with a baseline without the
 # plugin. Not in the default run: about $2 for the group. Run with `run.sh reuse`.
 REUSE_SCENARIOS="reuse-toast reuse-toast-bare reuse-toast-nocaller reuse-toast-nocaller-bare reuse-toast-undo reuse-toast-undo-bare"
@@ -53,6 +54,9 @@ SNAPSHOT_SCENARIOS="snapshot-change snapshot-update snapshot-copy"
 # Security settings (#32): a task that is easiest with a relaxed entitlement, with the plugin
 # and without it (security-bare, not counted). `security` is also in the default run.
 SECURITY_SCENARIOS="security security-bare"
+# Docs references (#70): a file renamed under docs that name it, with the docs in reach and
+# with the user limiting the change to the rename. Also in the default run.
+DOCS_SCENARIOS="docs-rename docs-rename-only"
 PLUGIN_DATA="${SMOKE_PLUGIN_DATA:-$HOME/.claude/plugins/data/swift-harness-inline}"
 
 for tool in claude swift swiftlint jq git; do
@@ -388,6 +392,40 @@ check_registry_swift_only() {
     expect "registry updated after the block: its check passes" registry_passes
   fi
 }
+
+# Docs references (#70). CLAUDE.md and the architecture doc name Greeting.swift; CLAUDE.md
+# also links to a doc that was already missing before the session, which must not block.
+DOCS_SETUP="mkdir -p docs; printf '# Smoke\\n\\n@docs/ARCHITECTURE.md\\n\\n- Greeting: \\x60Sources/App/Greeting.swift\\x60\\n- Old notes: [notes](docs/OLD.md)\\n' >CLAUDE.md; printf '# Architecture\\n\\n## Modules\\n\\nApp greets from \\x60Sources/App/Greeting.swift\\x60.\\n' >docs/ARCHITECTURE.md"
+scenario_docs_rename() {
+  CONFIG="{$BASE_CONFIG,\"lintBlocking\":false}"
+  TASK='Rename Sources/App/Greeting.swift to Sources/App/Greetings.swift with git mv. Keep its content.'
+  SETUP="$FOUR_SPACES; $DOCS_SETUP"
+  EXTRA_TOOLS="Bash(git mv:*)"
+}
+check_docs_rename() {
+  expect "file renamed" file_has Sources/App/Greetings.swift 'func greeting'
+  expect "the docs name the new file" docs_name_new_file
+  expect "the missing doc from before the session never blocked" not has_hook Stop 2 'OLD\.md'
+  expect "build and tests pass" verifies
+  expect "last Stop passes" last_stop_passes
+  note "Stop blocked on the docs" has_hook Stop 2 'Docs references broken'
+}
+# The user limits the change to the rename: the end-of-turn check must catch the stale docs.
+scenario_docs_rename_only() {
+  scenario_docs_rename
+  TASK='Rename Sources/App/Greeting.swift to Sources/App/Greetings.swift with git mv. Keep its content. Do only the rename.'
+}
+check_docs_rename_only() {
+  expect "file renamed" file_has Sources/App/Greetings.swift 'func greeting'
+  expect "Stop blocked on the stale docs, with file:line" has_hook Stop 2 'CLAUDE\.md:5: `Sources/App/Greeting\.swift` does not exist'
+  expect "the missing doc from before the session never blocked" not has_hook Stop 2 'OLD\.md'
+  if docs_name_new_file; then
+    note "docs updated after the block" true
+  else
+    expect "docs left stale: the user was told at the end" has_hook Stop 0 'still in the docs'
+  fi
+}
+docs_name_new_file() { file_has CLAUDE.md 'Sources/App/Greetings\.swift' && file_has docs/ARCHITECTURE.md 'Sources/App/Greetings\.swift' && not file_has CLAUDE.md 'Greeting\.swift`'; }
 
 # The problem swift-harness exists for: a second, slightly different copy of a UI
 # component that already exists. The app has a shared pill presenter (the plugin's own
@@ -1258,6 +1296,7 @@ scenarios="${*:-$ALL_SCENARIOS}"
 [ "$scenarios" = layout ] && scenarios="$LAYOUT_SCENARIOS"
 [ "$scenarios" = visual ] && scenarios="$VISUAL_SCENARIOS"
 [ "$scenarios" = snapshots ] && scenarios="$SNAPSHOT_SCENARIOS"
+[ "$scenarios" = docs ] && scenarios="$DOCS_SCENARIOS"
 [ "$scenarios" = security ] && scenarios="$SECURITY_SCENARIOS"
 for name in $scenarios; do
   declare -F "scenario_${name//-/_}" >/dev/null || { echo "smoke: unknown scenario $name" >&2; exit 2; }

@@ -2509,6 +2509,138 @@ SWIFT
   rm -rf "$L"
 fi
 
+# ---------- docs references (#70) ----------
+
+docs_project() { # $1 name: a project whose docs point at files, headings and sections
+  local p
+  p="$(new_project "$1")"
+  mkdir -p "$p/docs/adr"
+  cat >"$p/CLAUDE.md" <<'MD'
+# App
+
+@docs/ARCHITECTURE.md
+
+- Player: `Sources/App.swift`, the engine `Sources/Audio/Engine.swift:12`.
+- Popovers are listed under "Presented UI" in `docs/LAYOUT.md`.
+- [Modules](docs/ARCHITECTURE.md#modules), [external](https://example.com/a.md), [top](#app).
+- Snapshot baselines go in `snapshots/`; build logs in `build-output/log.txt`.
+- Run `scripts/verify.sh fast`; `{{PLACEHOLDER}}/x.swift` is filled by setup.
+MD
+  cat >"$p/docs/ARCHITECTURE.md" <<'MD'
+# Architecture
+
+## Modules
+
+Audio lives in `Sources/Audio/`; see [the presented UI](LAYOUT.md#presented-ui).
+
+```swift
+// `Sources/Nowhere.swift` in a code block is not a reference.
+```
+<!-- `Sources/Commented.swift` in a comment neither. -->
+MD
+  printf '# Layout\n\n## Presented UI\n\nNone yet.\n' >"$p/docs/LAYOUT.md"
+  printf '# 1. Old engine\n\nWe removed `Sources/Old/Engine.swift`.\n' >"$p/docs/adr/0001-old.md"
+  printf 'build-output/\n' >"$p/.gitignore"
+  git -C "$p" add -A && git -C "$p" commit -qm docs
+  printf '%s' "$p"
+}
+docs() { # docs.sh arguments; prints "exit=<code>" then the output
+  local out code
+  out="$("$SCRIPTS/docs.sh" "$@" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+
+D="$(docs_project docs-ok)"
+expect_result "docs: unchanged docs pass (links, paths, sections, an ADR, code, comments, ignored and later folders)" 0 '^exit=0$' "$(docs check "$D")"
+expect_result "docs: the summary counts docs and references and gives the session size" 0 '^exit=0$
+4 docs, [0-9]+ references; every session reads [0-9]+ of 20000 bytes' "$(docs summary "$D")"
+
+D="$(docs_project docs-renamed-file)"
+git -C "$D" mv Sources/App.swift Sources/Main.swift
+expect_result "docs: a renamed file is reported as file:line" 1 '^- CLAUDE\.md:5: `Sources/App\.swift` does not exist$' "$(docs check "$D")"
+
+D="$(docs_project docs-renamed-heading)"
+sed -i '' 's/^## Presented UI/## Popovers/' "$D/docs/LAYOUT.md"
+out="$(docs check "$D")"
+expect_result "docs: a renamed heading breaks the link to it, as file:line" 1 '^- docs/ARCHITECTURE\.md:5: link to #presented-ui, which is not a heading of docs/LAYOUT\.md$' "$out"
+expect_result "docs: and the section named beside the doc, as file:line" 1 '^- CLAUDE\.md:6: "Presented UI" is not a section of docs/LAYOUT\.md$' "$out"
+
+D="$(docs_project docs-renamed-doc)"
+git -C "$D" mv docs/LAYOUT.md docs/LAYOUT_CONTRACT.md
+out="$(docs check "$D")"
+expect_result "docs: a renamed doc breaks links and paths to it" 1 'docs/ARCHITECTURE\.md:5: link to LAYOUT\.md, which does not exist' "$out"
+expect_result "docs: the path in backticks too" 1 'CLAUDE\.md:6: `docs/LAYOUT\.md` does not exist' "$out"
+
+D="$(docs_project docs-budget)"
+set_config "$D" '{"docs":{"budget":300}}'
+expect_result "docs: files read into every session over the budget are reported, with each file's size" 1 \
+  '^- CLAUDE\.md:1: the files read into every session are [0-9]+ bytes \(about [0-9]+ tokens\), over the budget of 300 \(docs.budget\): CLAUDE\.md [0-9]+, docs/ARCHITECTURE\.md [0-9]+$' "$(docs check "$D")"
+
+D="$(docs_project docs-import)"
+printf '@docs/GONE.md\n' >>"$D/CLAUDE.md"
+expect_result "docs: an import of a missing file is reported" 1 '^- CLAUDE\.md:10: @docs/GONE\.md imports a file that does not exist$' "$(docs check "$D")"
+
+D="$(docs_project docs-history)"
+set_config "$D" '{"docs":{"history":[]}}'
+expect_result "docs: with no history folders, the ADR's old path is reported" 1 'docs/adr/0001-old\.md:3: `Sources/Old/Engine\.swift` does not exist' "$(docs check "$D")"
+
+D="$(docs_project docs-forms)"
+cat >>"$D/docs/LAYOUT.md" <<'MD'
+
+## Burning (services, step 3)
+
+- **Focus.** Keyboard focus stays in the sidebar.
+
+| Decision | Why |
+|---|---|
+| Network shares, the plan (2026-11-01) | Asked by the user. |
+MD
+cat >>"$D/CLAUDE.md" <<'MD'
+- "Burning" in `docs/LAYOUT.md`; "Focus" in `docs/LAYOUT.md`; `docs/LAYOUT.md`, "Network shares, the plan".
+- "Network shares" in `docs/LAYOUT.md`; "Rendering" in `docs/LAYOUT.md`.
+- Inside a module: `Nodes/`, `Player/Bar.swift`; on disk: `Music/Library.store`.
+MD
+out="$(docs check "$D")"
+expect_result "docs: a heading's lead, a bold label and a table row's first cell are sections" 1 '"Rendering" is not a section' "$out" '"(Burning|Focus|Network shares, the plan|Network shares)" is not'
+expect_result "docs: paths of one part, or whose first folder is not in the project, are left alone" 1 '"Rendering"' "$out" 'Nodes/|Player/Bar|Library\.store'
+
+# The docs setup generates, placeholders and all, pass.
+D="$(new_project docs-templates)"
+cp "$PLUGIN/skills/setup/templates/CLAUDE.md" "$D/CLAUDE.md"
+cp -R "$PLUGIN/skills/setup/templates/docs" "$D/"
+expect_result "docs: the docs setup generates pass before anything is filled in" 0 '^exit=0$' "$(docs check "$D")"
+
+# The end-of-turn hook: only problems new in the session block, once.
+docs_watch() { # $1 project, $2 extra JSON; prints "exit=<code>" then stdout and stderr on one line
+  local out code
+  out="$(hook docs-watch.sh "$1" "${2:-}" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$(printf '%s' "$out" | tr '\n' ' ')"
+}
+D="$(docs_project docs-watch)"
+git -C "$D" mv Sources/AudioTools/Tool.swift Sources/AudioTools/Tools.swift
+printf -- '- Tools: `Sources/AudioTools/Tool.swift`\n' >>"$D/CLAUDE.md"
+git -C "$D" add -A && git -C "$D" commit -qm "a broken reference before the session"
+hook session-start.sh "$D" '{"source":"startup"}' >/dev/null
+expect_result "docs-watch: a problem already there when the session started does not block" 0 '^exit=0$' "$(docs_watch "$D")" 'Tool\.swift'
+LOG="$TMP/docs-watch.log"; : >"$LOG"
+echo 'let app = 2' >"$D/Sources/App.swift"
+FAKE_VERIFY_LOG="$LOG" hook stop-verify.sh "$D" >/dev/null 2>&1
+ran="$(wc -l <"$LOG" | tr -d ' ')"
+: >"$LOG"
+sed -i '' 's/^## Modules/## Parts/' "$D/docs/ARCHITECTURE.md"
+FAKE_VERIFY_LOG="$LOG" hook stop-verify.sh "$D" >/dev/null 2>&1
+if [ "$ran" = 1 ] && [ ! -s "$LOG" ]; then ok "docs-watch: a Swift edit runs the verify command, a docs edit after it does not"
+else nok "docs-watch: a Swift edit runs the verify command, a docs edit after it does not" "runs after the Swift edit: $ran; after the docs edit: $(wc -l <"$LOG")"; fi
+expect_result "docs-watch: a reference broken in the session blocks, with file:line" 2 'CLAUDE\.md:7: link to #modules, which is not a heading of docs/ARCHITECTURE\.md' "$(docs_watch "$D")" 'Tool\.swift'
+expect_result "docs-watch: the same problems do not block twice; the user is told" 0 'systemMessage.*#modules' "$(docs_watch "$D" '{"stop_hook_active":true}')"
+sed -i '' 's/^## Parts/## Modules/' "$D/docs/ARCHITECTURE.md"
+expect_result "docs-watch: fixed docs pass" 0 '^exit=0$' "$(docs_watch "$D")"
+set_config "$D" '{"docs":{"enabled":false}}'
+sed -i '' 's/^## Modules/## Parts/' "$D/docs/ARCHITECTURE.md"
+expect_result "docs-watch: docs.enabled false turns it off" 0 '^exit=0$' "$(docs_watch "$D")"
+
 # ---------- summary ----------
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
