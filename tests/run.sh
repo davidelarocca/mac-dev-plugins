@@ -2347,6 +2347,84 @@ if jq -e '.hooks.SessionStart[0].matcher | split("|") | index("compact")' "$PLUG
   ok "checkpoint: session-start runs after a compaction"
 else nok "checkpoint: session-start runs after a compaction"; fi
 
+# ---------- per-session state (#61) ----------
+# Two Claude Code sessions on one folder: each session's notices report what changed since its
+# own start, and the second start does not erase the first session's lists.
+
+as() { # $1 session id, $2 script, $3 project, $4 optional extra JSON
+  local extra="${4:-}"
+  [ -n "$extra" ] || extra='{}'
+  hook "$2" "$3" "$(jq -nc --arg s "$1" --argjson e "$extra" '$e + {session_id: $s}')"
+}
+state_of() { printf '%s/data/state/%s' "$TMP" "$(printf '%s' "$(cd "$1" && pwd -P)" | shasum | cut -c1-16)"; }
+
+P="$(new_project sessions-protected)"
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+as A session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let engine = 2' >>"$P/Sources/Audio/Engine.swift"
+as B session-start.sh "$P" '{"source":"startup"}' >/dev/null
+expect_result "sessions: a protected file changed before a second session started is still reported to the first" 0 'changed: Sources/Audio/Engine\.swift' "exit=0
+$(as A protected-watch.sh "$P" 2>&1)"
+expect_result "sessions: the second session does not report a change made before it started" 0 '^exit=0$' "exit=0$(as B protected-watch.sh "$P" 2>&1)"
+echo 'let engine = 3' >"$P/Sources/Audio/Engine.swift"
+post_edit "$P" "$P/Sources/Audio/Engine.swift" >/dev/null
+expect_result "sessions: an edit through the guarded tools is not reported to the other session either" 0 '^exit=0$' "exit=0$(as B protected-watch.sh "$P" 2>&1)"
+
+P="$(new_project sessions-verify)"
+set_config "$P" '{"format":"none","lint":"none","verify":{"command":"scripts/verify.sh fast","maxAttempts":5}}'
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+approve "$P" >/dev/null
+as A session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let app = 2' >"$P/Sources/App.swift"
+as B session-start.sh "$P" '{"source":"startup"}' >/dev/null
+: >"$LOG"
+FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT=0 as B stop-verify.sh "$P" >/dev/null 2>&1
+b_runs="$(grep -c . "$LOG")"
+out="$(as A session-start.sh "$P" '{"source":"compact"}' 2>&1)"
+expect_result "sessions: the first session's checkpoint counts a change made before the second started" 0 '1 file\(s\) changed in this session: Sources/App\.swift' "exit=0
+$out"
+FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT=0 as A stop-verify.sh "$P" >/dev/null 2>&1
+if [ "$b_runs" = 0 ] && [ "$(grep -c . "$LOG")" = 1 ]; then ok "sessions: each session's end check compares with its own starting code"
+else nok "sessions: each session's end check compares with its own starting code" "runs: B=$b_runs, then total $(grep -c . "$LOG")"; fi
+
+P="$(new_project sessions-contract)"
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+as A session-start.sh "$P" '{"source":"startup"}' >/dev/null
+mkdir -p "$P/docs"
+printf '{"packages":{".":{"App":["Core"]}}}\n' >"$P/docs/architecture-contracts.json"
+as B session-start.sh "$P" '{"source":"startup"}' >/dev/null
+expect_result "sessions: a contract created before a second session started is still reported to the first" 0 'created in this session.*App -> Core' "exit=0
+$(as A contract-watch.sh "$P" 2>&1 | tr '\n' ' ')"
+expect_result "sessions: the second session does not report the contract it started with" 0 '^exit=0$' "exit=0$(as B contract-watch.sh "$P" 2>&1)"
+
+P="$(new_project sessions-snapshots)"
+mkdir -p "$P/snapshots"
+echo one >"$P/snapshots/Pill.png"
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+as A session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo two >"$P/snapshots/Pill.png"
+as B session-start.sh "$P" '{"source":"startup"}' >/dev/null
+expect_result "sessions: a baseline replaced before a second session started is still reported to the first" 0 'changed: snapshots/Pill\.png' "exit=0
+$(as A snapshot-watch.sh "$P" 2>&1)"
+
+P="$(sec_project sessions-security)"
+as A session-start.sh "$P" '{"source":"startup"}' >/dev/null
+entitle "$P" 'com\.apple\.security\.cs\.allow-jit' YES
+sec --approve "$(sec --status --project "$P" | sed -n 's/^Digest: //p')" --project "$P" >/dev/null
+as B session-start.sh "$P" '{"source":"startup"}' >/dev/null
+expect_result "sessions: a security approval made before a second session started is still shown to the first" 0 'baseline was approved in this session.*allow-jit = true' "exit=0
+$(as A protected-watch.sh "$P" 2>&1 | tr '\n' ' ')"
+
+P="$(new_project sessions-cleanup)"
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+S="$(state_of "$P")"
+mkdir -p "$S/sessions/old-session"
+touch -t 202001010000 "$S/sessions/old-session"
+as '../../escape' session-start.sh "$P" '{"source":"startup"}' >/dev/null
+if [ ! -e "$S/sessions/old-session" ] && [ -d "$S/sessions/escape" ] && [ ! -e "$TMP/data/escape" ] && [ ! -e "$TMP/data/state/escape" ]; then
+  ok "sessions: old session folders are removed, and a session id cannot leave the sessions folder"
+else nok "sessions: old session folders are removed, and a session id cannot leave the sessions folder" "$(find "$TMP/data" -maxdepth 4 -name '*escape*' -o -maxdepth 4 -name old-session)"; fi
+
 # ---------- accessibility audit template (#36) ----------
 A11Y="$HERE/fixtures/accessibility"
 if [ "$(readlink "$A11Y/A11yFixtureUITests/AccessibilityAudit.swift")" = "../../../../plugins/swift-harness/skills/setup/templates/tests/AccessibilityAudit.swift" ] &&

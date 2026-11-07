@@ -104,6 +104,38 @@ sh_state_dir() {
   mkdir -p "$dir" && printf '%s' "$dir"
 }
 
+# Per-session state (#61): what a session compares with at the end of each turn (the code,
+# protected files, snapshot baselines, contract and approved security settings as they were
+# when it started, and the notices already shown) lives in sessions/<session_id>/ inside the
+# project's state folder, so two sessions on one folder do not overwrite each other's lists.
+# Approvals, the security baseline, the last verification result and lint-pending stay per
+# project: they are shared on purpose. Without a session_id (older Claude Code) every session
+# uses sessions/none, as one shared folder did before.
+SH_SESSION_MAX_DAYS=14
+sh_session_id() {
+  local id
+  id="$(sh_in '.session_id' | LC_ALL=C tr -cd 'A-Za-z0-9_-' | cut -c1-64)"
+  printf '%s' "${id:-none}"
+}
+sh_session_path() { printf '%s/sessions/%s' "$1" "$(sh_session_id)"; } # $1 state folder
+# Creates it and refreshes its date, which the cleanup at session start goes by.
+sh_session_dir() {
+  local dir
+  dir="$(sh_session_path "$1")"
+  mkdir -p "$dir" && touch "$dir" && printf '%s' "$dir"
+}
+# Append standard input to <file> in every session folder that has <marker>: a guarded edit
+# or an approval concerns every session open on the project, not just the one that made it.
+sh_sessions_append() { # $1 state folder, $2 file, $3 marker
+  local lines dir
+  lines="$(cat)"
+  [ -n "$lines" ] || return 0
+  for dir in "$1"/sessions/*/; do
+    [ -f "$dir$3" ] && printf '%s\n' "$lines" >>"$dir$2"
+  done
+  return 0
+}
+
 # Files that can change the result of a build or test run. Git pathspecs: "*" also matches "/".
 # Everything under a SwiftPM Sources/ or Tests/ folder counts: a target's resources and test
 # fixtures can live in any subfolder. Xcode per-user state and Finder metadata do not.
