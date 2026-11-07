@@ -144,6 +144,30 @@ sh_snapshot_list() {
     sed 's/  / /' | LC_ALL=C sort
 }
 
+# "<sha256> <path>" for every file under the protected paths, sorted, for protected-watch.sh
+# (#11). Placeholders and paths that do not exist are skipped.
+sh_protected_list() {
+  local p
+  jq -r '.protectedPaths[]? // empty' "$SH_CONFIG" 2>/dev/null | while IFS= read -r p; do
+    [ -n "$p" ] && [[ "$p" != *"{{"* ]] || continue
+    p="${p#./}"
+    p="${p%/}"
+    [ -e "$SH_ROOT/$p" ] || continue
+    # -H: a protected path that is itself a symlink is followed, as the guard resolves it.
+    (cd "$SH_ROOT" && find -H "$p" -type f ! -name .DS_Store -print0 2>/dev/null | xargs -0 shasum -a 256 2>/dev/null)
+  done | sed 's/  / /' | LC_ALL=C sort -u
+}
+
+# "<sha256> <path>" for every modified or untracked file, "deleted <path>" for deleted ones,
+# sorted: what differs from HEAD, for the checkpoint after a compaction (#10).
+sh_dirty_list() {
+  (
+    cd "$SH_ROOT" || exit 0
+    git ls-files -m -o --exclude-standard -z 2>/dev/null | xargs -0 shasum -a 256 2>/dev/null | sed 's/  / /'
+    git ls-files -d 2>/dev/null | sed 's/^/deleted /'
+  ) | LC_ALL=C sort -u
+}
+
 # Plugin version, from the manifest next to these scripts.
 SH_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)"
 

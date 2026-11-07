@@ -83,3 +83,30 @@ custom_rules:
     severity: warning
     excluded: '{{DS_EXCLUDED_REGEX}}'
     excluded_match_kinds: [comment, doccomment]
+  # Concurrency escape hatches: each silences Swift's data race checks. A new one needs a
+  # reason on the same line, `// concurrency: <why it is safe>`; the SwiftLint baseline keeps
+  # the ones already there (swiftlint lint --write-baseline).
+  concurrency_unchecked_sendable:
+    name: "Unchecked Sendable"
+    regex: '@unchecked\s+Sendable(?!(?:[^\n"]|"(?:[^"\\\n]|\\.)*")*//\s*concurrency:\s*\S)'
+    message: "@unchecked Sendable turns off data race checking for this type. Prefer an actor, a Mutex, or Sendable stored properties; if it is needed, say why on the same line: // concurrency: <why it is safe>"
+    severity: error
+    excluded_match_kinds: [comment, doccomment, string]
+  concurrency_nonisolated_unsafe:
+    name: "nonisolated(unsafe)"
+    regex: 'nonisolated\s*\(\s*unsafe\s*\)(?!(?:[^\n"]|"(?:[^"\\\n]|\\.)*")*//\s*concurrency:\s*\S)'
+    message: "nonisolated(unsafe) opts this state out of isolation checking. Prefer a let, an actor, a Mutex or @MainActor; if it is needed, say why on the same line: // concurrency: <why it is safe>"
+    severity: error
+    excluded_match_kinds: [comment, doccomment, string]
+  concurrency_preconcurrency:
+    name: "@preconcurrency"
+    regex: '@preconcurrency\b(?!(?:[^\n"]|"(?:[^"\\\n]|\\.)*")*//\s*concurrency:\s*\S)'
+    message: "@preconcurrency hides Sendable and isolation errors from that import or conformance. Prefer updating the dependency or isolating its use; if it is needed, say why on the same line: // concurrency: <why it is safe>"
+    severity: error
+    excluded_match_kinds: [comment, doccomment, string]
+  concurrency_assume_isolated:
+    name: "assumeIsolated"
+    regex: '\.assumeIsolated\s*[({](?!(?:[^\n"]|"(?:[^"\\\n]|\\.)*")*//\s*concurrency:\s*\S)'
+    message: "assumeIsolated crashes at run time if the assumption is wrong. Prefer await or marking the caller with the actor; if it is needed, say why on the same line: // concurrency: <why it is safe>"
+    severity: error
+    excluded_match_kinds: [comment, doccomment, string]

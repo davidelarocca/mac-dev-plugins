@@ -7,7 +7,8 @@
 # Levels: blocks (macOS-only API compiled on iOS: the module does not build for iOS as is),
 # adapt (available on iOS but behaves differently: hover, keyboard, menus, drag and drop),
 # guarded (macOS-only API inside a branch iOS does not compile, such as #if os(macOS)).
-# Text only: it reads Swift files, manifests and Package.resolved, and runs no project code.
+# Text only: it reads Swift, C and Objective-C files, manifests and Package.resolved, and runs
+# no project code.
 # A module is Sources/<target> or Tests/<target> of a package, else the top folder.
 
 set -uo pipefail
@@ -22,7 +23,7 @@ list() { git -C "$root" ls-files -co --exclude-standard "$@" 2>/dev/null; }
 packages="$(list 'Package.swift' '*/Package.swift' | sed -e 's|/\{0,1\}Package\.swift$||' -e 's|^$|.|' | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)"
 
 scan() {
-  list '*.swift' | grep -vE '(^|/)(\.build|Pods|Carthage|DerivedData)/|(^|/)Package\.swift$' |
+  list '*.swift' '*.c' '*.h' '*.m' '*.mm' | grep -vE '(^|/)(\.build|Pods|Carthage|DerivedData)/|(^|/)Package\.swift$' |
     (cd "$root" && tr '\n' '\0' | SH_PKGS="$packages" xargs -0 awk '
     BEGIN { pkgs = ENVIRON["SH_PKGS"] }
     function module(path,   n, i, p, rest, parts) {
@@ -64,10 +65,17 @@ scan() {
       else if (!active()) return
       printf "%s\t%s\t%s:%d\t%s\n", level, mod, FILENAME, FNR, signal
     }
-    FNR == 1 { depth = 0; incomment = 0; mod = module(FILENAME) }
+    FNR == 1 { depth = 0; incomment = 0; inmls = 0; mod = module(FILENAME) }
     {
       line = $0
       # Block comments, then line comments and string contents, so text never counts as code.
+      # Multiline string literals (""") are text, not code.
+      if (inmls) { if (index(line, "\"\"\"")) { line = substr(line, index(line, "\"\"\"") + 3); inmls = 0 } else next }
+      if (index(line, "\"\"\"")) {
+        q = index(line, "\"\"\""); after = substr(line, q + 3)
+        if (index(after, "\"\"\"")) line = substr(line, 1, q - 1) substr(after, index(after, "\"\"\"") + 3)
+        else { line = substr(line, 1, q - 1); inmls = 1 }
+      }
       if (incomment) { if (index(line, "*/")) { line = substr(line, index(line, "*/") + 2); incomment = 0 } else next }
       while (index(line, "/*")) {
         s = index(line, "/*"); e = index(substr(line, s + 2), "*/")
@@ -86,7 +94,7 @@ scan() {
       if (line ~ /^[ \t]*#else/) { val[depth] = taken[depth] ? 0 : (unk[depth] ? 2 : 1); next }
       if (line ~ /^[ \t]*#endif/) { if (depth > 0) depth--; next }
 
-      if (match(line, /^[ \t]*(@[A-Za-z_]+[ \t]+)*import[ \t]+(class[ \t]+|struct[ \t]+|enum[ \t]+|func[ \t]+)?(AppKit|Cocoa|Carbon|IOKit|ServiceManagement|OSAKit|Quartz|ScreenSaver|InputMethodKit|CoreWLAN|ApplicationServices)([ \t.;]|$)/)) {
+      if (match(line, /^[ \t]*(@[A-Za-z_]+[ \t]+)*import[ \t]+(class[ \t]+|struct[ \t]+|enum[ \t]+|func[ \t]+)?(AppKit|Cocoa|Carbon|IOKit|ServiceManagement|OSAKit|Quartz|ScreenSaver|InputMethodKit|CoreWLAN|ApplicationServices|iTunesLibrary|DiscRecording|DiscRecordingUI|IOBluetooth|IOBluetoothUI|SecurityInterface|Automator|PreferencePanes|QuickLookUI|SystemExtensions|Virtualization|Hypervisor)([ \t.;]|$)/)) {
         m = line; sub(/^[ \t]*(@[A-Za-z_]+[ \t]+)*import[ \t]+(class[ \t]+|struct[ \t]+|enum[ \t]+|func[ \t]+)?/, "", m); sub(/[ \t.;].*/, "", m)
         hit("blocks", "import " m)
       }
@@ -97,6 +105,12 @@ scan() {
         rest = substr(rest, RSTART + RLENGTH - 1)
         if (rest == "") break
       }
+      if (match(line, /^[ \t]*#[ \t]*(include|import)[ \t]*<(AppKit|Cocoa|IOKit|Carbon|DiscRecording|CoreServices\/FSEvents|IOBluetooth)\//)) {
+        m = line; sub(/^[ \t]*#[ \t]*(include|import)[ \t]*</, "", m); sub(/>.*/, "", m)
+        hit("blocks", "#include <" m ">")
+      }
+      if (line ~ /(^|[^A-Za-z0-9_])FSEventStream[A-Za-z]*/) hit("blocks", "FSEvents (macOS only)")
+      if (line ~ /(^|[^A-Za-z0-9_])(kAudioHardwareProperty[A-Za-z]*|kAudioDeviceProperty[A-Za-z]*|AudioObjectGetPropertyData|AudioObjectSetPropertyData|AudioDeviceID|kAudioOutputUnitProperty_CurrentDevice)([^A-Za-z0-9_]|$)/) hit("blocks", "Core Audio HAL (macOS only)")
       if (line ~ /(^|[^A-Za-z0-9_])MenuBarExtra([^A-Za-z0-9_]|$)/) hit("blocks", "MenuBarExtra (macOS only)")
       if (line ~ /^[ \t]*Settings[ \t]*\{/) hit("blocks", "Settings scene (macOS only)")
       if (line ~ /(^|[^A-Za-z0-9_.])Window[ \t]*\([ \t]*(""|LocalizedStringKey|Text)/) hit("blocks", "Window scene (macOS only)")
@@ -131,7 +145,7 @@ if [ -n "$platforms" ]; then printf '%s\n' "$platforms" | awk -F'\t' '{ printf "
 else printf -- '- none in project.pbxproj or Package.swift\n'; fi
 
 printf '\nModules:\n'
-list '*.swift' | grep -vE '(^|/)(\.build|Pods|Carthage|DerivedData)/|(^|/)Package\.swift$' |
+list '*.swift' '*.c' '*.h' '*.m' '*.mm' | grep -vE '(^|/)(\.build|Pods|Carthage|DerivedData)/|(^|/)Package\.swift$' |
   SH_PKGS="$packages" awk '
     BEGIN { pkgs = ENVIRON["SH_PKGS"] }
     function module(path,   n, i, p, rest, parts) {
@@ -162,7 +176,7 @@ list '*.swift' | grep -vE '(^|/)(\.build|Pods|Carthage|DerivedData)/|(^|/)Packag
     fi
     [ "$n_g" -eq 0 ] || line="$line; $n_g behind #if (not compiled on iOS)"
     [ "$n_a" -eq 0 ] || line="$line; $n_a to adapt ($(printf '%s\n' "$adapt" | cut -f4 | sed 's/ (.*//' | sort | uniq -c | awk '{ c = $1; $1 = ""; sub(/^ /, ""); printf "%s%s %s", (NR > 1 ? ", " : ""), c, $0 }'))"
-    printf -- '- %s (%s Swift file(s)): %s\n' "$mod" "$count" "$line"
+    printf -- '- %s (%s source file(s)): %s\n' "$mod" "$count" "$line"
   done
 
 printf '\nDependencies (Package.resolved):\n'

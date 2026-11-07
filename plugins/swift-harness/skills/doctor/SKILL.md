@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: Read-only diagnosis of the swift-harness setup in this project - tools, configuration, verify script, platforms and approval, formatter, project structure and the last verification - with one fix per problem. Changes no file.
+description: Read-only diagnosis of the swift-harness setup in this project - tools, configuration, verify script, platforms and approval, security settings baseline, formatter, project structure and the last verification - with one fix per problem. Changes no file.
 disable-model-invocation: true
 ---
 

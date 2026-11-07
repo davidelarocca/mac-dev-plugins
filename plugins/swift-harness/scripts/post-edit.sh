@@ -8,6 +8,19 @@
 sh_init || exit 0
 
 file="$(sh_in '.tool_input.file_path')"
+# A protected file edited through Edit or Write (#11): the guard asked the user first, so
+# protected-watch.sh does not report this state of the file at the end of the turn. Recorded
+# on exit, after the formatter, whichever way this script ends.
+record_protected_edit() {
+  local prel pstate
+  [ -n "$file" ] && [ -f "$file" ] || return 0
+  jq -e '(.protectedPaths // []) | length > 0' "$SH_CONFIG" >/dev/null 2>&1 || return 0
+  prel="$(sh_relpath "$file")"
+  pstate="$(sh_state_path)"
+  [ -n "$prel" ] && [ -f "$pstate/protected-start" ] || return 0
+  sh_protected_list | awk -v p="$prel" 'substr($0, index($0, " ") + 1) == p' >>"$pstate/protected-edited"
+}
+trap record_protected_edit EXIT
 [[ "$file" == *.swift ]] || exit 0
 [ -f "$file" ] || exit 0
 # Only files inside this project: never format or lint a file elsewhere on disk.
