@@ -343,7 +343,7 @@ scripts/verify.sh
 
 ## Roadmap
 
-Next up: **v1.5.0, iOS and multiplatform**, with a read-only porting audit for macOS apps, then **v1.6.0, assisted macOS to iOS porting**. See the full [roadmap](ROADMAP.md).
+Next up: **v1.6.0, assisted macOS to iOS porting**, in verified slices. The README says macOS until a real iOS app passes. See the full [roadmap](ROADMAP.md).
 
 ## Limitations
 
