@@ -2,11 +2,21 @@
 
 Where swift-harness is going, and why. Live status is in the [milestones](https://github.com/davidelarocca/swift-harness/milestones) and [issues](https://github.com/davidelarocca/swift-harness/issues). This page is updated with every release.
 
-_Last updated: 7 November 2026, after v1.5.0 (iOS-aware checks, porting audit, security settings contract)._
+_Last updated: 7 November 2026: v1.6.0 is now sessions, keyboard and performance; iOS porting moves to v1.7.0, waiting for a real port._
 
 **Guiding principle:** every check the harness claims to run must actually run, and must be backed by a test. New features come after the existing gates are reliable, and claims about impact come with measurements.
 
-## Now: v1.6.0, assisted macOS to iOS porting
+## Now: v1.6.0, reliable sessions, keyboard and performance
+
+| | What you get | Issue |
+|---|---|---|
+| 🧷 | **Per-session state.** Two sessions on one folder keep their own start lists, so one never hides the other's shell changes. Done, in Unreleased. | [#61](https://github.com/davidelarocca/swift-harness/issues/61) |
+| ⌨️ | **Keyboard, focus order and Reduce Motion checks** for shared components: keys pressed in unit tests, the Tab order in UI tests, an overridable Reduce Motion in the design system. Done, in Unreleased. | [#52](https://github.com/davidelarocca/swift-harness/issues/52) |
+| ⏱️ | **Performance budget.** Key operations measured against recorded baselines in the full check; a regression fails with the numbers. Later, a skill that explains slowness with a trace. | [#33](https://github.com/davidelarocca/swift-harness/issues/33) |
+
+## Next: v1.7.0, assisted macOS to iOS porting
+
+Waits for a real iOS port of a macOS app to check it on: the porting audit of 1.5.0 is there to start one.
 
 | | What you get | Issue |
 |---|---|---|
@@ -17,9 +27,6 @@ _Last updated: 7 November 2026, after v1.5.0 (iOS-aware checks, porting audit, s
 
 | | What you get | Issue |
 |---|---|---|
-| ⌨️ | **Focus, keyboard and Reduce Motion checks** for shared components: what a test can measure on macOS, the rest as review checks. | [#52](https://github.com/davidelarocca/swift-harness/issues/52) |
-| 🧷 | **Per-session state.** Two sessions on one folder keep their own start lists, so one never hides the other's shell changes. | [#61](https://github.com/davidelarocca/swift-harness/issues/61) |
-| ⏱️ | **Performance budget.** Key operations measured against recorded baselines in the full check; a regression fails with the numbers. Later, a skill that explains slowness with a trace. | [#33](https://github.com/davidelarocca/swift-harness/issues/33) |
 | 📊 | **v2.0.0: a measured harness.** Repeatable evals of Claude with and without swift-harness: reuse, regressions, build passes, cost. Published with method and raw data. | [#8](https://github.com/davidelarocca/swift-harness/issues/8) |
 
 Ideas parked until there is demand: a local, read-only view of the checks with evidence behind every edge and status ([#50](https://github.com/davidelarocca/swift-harness/discussions/50)); persistence migrations, localization, approval across worktrees, docs drift ([#38](https://github.com/davidelarocca/swift-harness/discussions/38)).
