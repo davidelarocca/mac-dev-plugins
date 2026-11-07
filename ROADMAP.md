@@ -13,6 +13,8 @@ _Last updated: 7 November 2026: v1.6.0 is now sessions, keyboard and performance
 | 🧷 | **Per-session state.** Two sessions on one folder keep their own start lists, so one never hides the other's shell changes. Done, in Unreleased. | [#61](https://github.com/davidelarocca/swift-harness/issues/61) |
 | ⌨️ | **Keyboard, focus order and Reduce Motion checks** for shared components: keys pressed in unit tests, the Tab order in UI tests, an overridable Reduce Motion in the design system. Done, in Unreleased. | [#52](https://github.com/davidelarocca/swift-harness/issues/52) |
 | ⏱️ | **Performance budget.** Key operations measured against recorded baselines in the full check; a regression fails with the numbers. Later, a skill that explains slowness with a trace. | [#33](https://github.com/davidelarocca/swift-harness/issues/33) |
+| 📐 | **Layout check from the accessibility tree** in UI tests: an element cut by the window edge, a text over another, on macOS and iOS. | [#69](https://github.com/davidelarocca/swift-harness/issues/69) |
+| 🔗 | **Docs reference check.** Broken links, paths and section names in the project docs, and a size budget for what every session reads. | [#70](https://github.com/davidelarocca/swift-harness/issues/70) |
 
 ## Next: v1.7.0, assisted macOS to iOS porting
 
@@ -22,11 +24,18 @@ Waits for a real iOS port of a macOS app to check it on: the porting audit of 1.
 |---|---|---|
 | 🍎➡️📱 | **Porting in verified slices.** After you accept the plan and the target structure: shared domain first, adapters for platform APIs, then one feature at a time, each built and tested on iOS and on the Mac, with results per platform. Checked on a real port. | [#48](https://github.com/davidelarocca/swift-harness/issues/48) |
 | 📱 | **iOS checked on a real app.** The iOS-aware checks of 1.5.0 used on a real iOS port: the README says iOS once it passes. | [#40](https://github.com/davidelarocca/swift-harness/issues/40) |
+| 🧳 | **Guest mode.** Run on a project that has its own rules and checks, without setup. | [#71](https://github.com/davidelarocca/swift-harness/issues/71) |
+| 🧭 | **Branch scope contract.** Changes outside a branch's paths, and its drift from main, reported. | [#72](https://github.com/davidelarocca/swift-harness/issues/72) |
+| 🔒 | **Porting ratchet.** New macOS-only API in a ported shared module fails. | [#73](https://github.com/davidelarocca/swift-harness/issues/73) |
+| 🚦 | **Shared machine.** UI tests and simulators ask first, take a lock, build only what is ported. | [#74](https://github.com/davidelarocca/swift-harness/issues/74) |
+| 🎧 | **Audio apps.** Audio session, interruptions and background audio in the porting audit. | [#75](https://github.com/davidelarocca/swift-harness/issues/75) |
 
 ## Later
 
 | | What you get | Issue |
 |---|---|---|
+| 👀 | **UI review ritual.** Three window sizes, a gallery of states from UI tests, a keyboard-only pass. | [#67](https://github.com/davidelarocca/swift-harness/issues/67) |
+| 🪤 | **Pitfalls and test isolation.** A pitfalls template, and UI tests that never touch the user's real data. | [#68](https://github.com/davidelarocca/swift-harness/issues/68) |
 | 📊 | **v2.0.0: a measured harness.** Repeatable evals of Claude with and without swift-harness: reuse, regressions, build passes, cost. Published with method and raw data. | [#8](https://github.com/davidelarocca/swift-harness/issues/8) |
 
 Ideas parked until there is demand: a local, read-only view of the checks with evidence behind every edge and status ([#50](https://github.com/davidelarocca/swift-harness/discussions/50)); persistence migrations, localization, approval across worktrees, docs drift ([#38](https://github.com/davidelarocca/swift-harness/discussions/38)).
