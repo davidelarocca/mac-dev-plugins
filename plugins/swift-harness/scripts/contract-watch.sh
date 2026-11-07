@@ -8,12 +8,13 @@
 . "$(dirname "$0")/lib.sh"
 sh_init || exit 0
 state="$(sh_state_dir)" || exit 0
+sess="$(sh_session_path "$state")"
 
 current="$SH_ROOT/$SH_CONTRACT"
-start="$state/contract-start.json"
+start="$sess/contract-start.json"
 if [ -f "$start" ]; then
   had=true
-elif [ -f "$state/contract-start.none" ]; then
+elif [ -f "$sess/contract-start.none" ]; then
   had=false
 else
   exit 0 # no baseline for this session
@@ -21,7 +22,7 @@ fi
 
 sum="none"
 [ -f "$current" ] && sum="$(shasum <"$current" | cut -d' ' -f1)"
-[ "$sum" = "$(cat "$state/contract-warned" 2>/dev/null)" ] && exit 0
+[ "$sum" = "$(cat "$sess/contract-warned" 2>/dev/null)" ] && exit 0
 if [ "$had" = true ] && [ -f "$current" ] && cmp -s "$start" "$current"; then exit 0; fi
 [ "$had" = false ] && [ ! -f "$current" ] && exit 0
 
@@ -54,6 +55,6 @@ $(printf '%s\n' "$changes" | head -30)
 Check that you agree: the contract decides what the end-of-turn check accepts."
 fi
 
-printf '%s' "$sum" >"$state/contract-warned"
+printf '%s' "$sum" >"$sess/contract-warned"
 jq -n --arg msg "$msg" '{systemMessage: $msg}'
 exit 0

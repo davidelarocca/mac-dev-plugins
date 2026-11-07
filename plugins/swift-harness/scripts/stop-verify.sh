@@ -10,6 +10,8 @@ sh_init || exit 0
 
 git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1 || exit 0
 state="$(sh_state_dir)" || exit 0
+# This session's starting code and failure count (#61); results and approvals are per project.
+sess="$(sh_session_dir "$state")" || exit 0
 
 verify_enabled="$(sh_cfg '.verify.enabled' 'true')"
 lint_gate=false
@@ -53,10 +55,10 @@ checks=""
 
 fp="$(sh_identity)"
 [ "$fp" = "$(cat "$state/passed" 2>/dev/null)" ] && exit 0
-[ "$fp" = "$(cat "$state/baseline" 2>/dev/null)" ] && exit 0
+[ "$fp" = "$(cat "$sess/baseline" 2>/dev/null)" ] && exit 0
 
 failed_fp="$(cat "$state/failed" 2>/dev/null)"
-failures="$(cat "$state/failures" 2>/dev/null)"
+failures="$(cat "$sess/failures" 2>/dev/null)"
 failures="${failures:-0}"
 
 warn_user() {
@@ -66,8 +68,8 @@ warn_user() {
 # Tell the user once per code state that the verify command did not run.
 warn_unapproved() {
   [ "$verify_enabled" = "true" ] && [ "$run_verify" = "false" ] || return 0
-  [ "$fp" = "$(cat "$state/unapproved-warned" 2>/dev/null)" ] && return 0
-  printf '%s' "$fp" >"$state/unapproved-warned"
+  [ "$fp" = "$(cat "$sess/unapproved-warned" 2>/dev/null)" ] && return 0
+  printf '%s' "$fp" >"$sess/unapproved-warned"
   warn_user "swift-harness: the end-of-turn check did not run '$command_line', because this project's verify command is new or changed since you last approved it. These changes are not verified. Review the command and the files it runs, then type /swift-harness:approve-verify."
 }
 
@@ -109,7 +111,7 @@ recheck_lint() {
 # If this stop follows a block, Claude chose to stop: tell the user.
 if [ "$fp" = "$failed_fp" ]; then
   if [ "$(sh_in '.stop_hook_active')" = "true" ]; then
-    printf '0' > "$state/failures"
+    printf '0' > "$sess/failures"
     warn_user "swift-harness: '$checks' is still failing. Claude stopped without fixing it."
   fi
   exit 0
@@ -172,7 +174,7 @@ if [ "$status" -eq 0 ]; then
   else
     printf '%s\n%s' "$fp" "$checks" > "$state/checked"
   fi
-  printf '0' > "$state/failures"
+  printf '0' > "$sess/failures"
   rm -f "$state/failed" "$out"
   warn_unapproved
   exit 0
@@ -182,12 +184,12 @@ failures=$((failures + 1))
 printf '%s' "$fp" > "$state/failed"
 
 if [ "$failures" -ge "$max_attempts" ]; then
-  printf '0' > "$state/failures"
+  printf '0' > "$sess/failures"
   rm -f "$out"
   warn_user "swift-harness: '$checks' failed $max_attempts times in a row. Stopping so you can decide."
   exit 0
 fi
-printf '%s' "$failures" > "$state/failures"
+printf '%s' "$failures" > "$sess/failures"
 
 {
   printf 'Verification failed (attempt %s of %s): %s\n\n' "$failures" "$max_attempts" "$checks"
