@@ -1164,7 +1164,7 @@ expect_result "porting: hover is a UI adaptation" 0 'adapt	.*PlatformImage\.swif
 $pscan"
 expect_result "porting: comments, strings and multiline strings are not code (review #7)" 0 'Shared' "exit=0
 $pscan" 'Track\.swift|Help\.swift'
-expect_result "porting: a pure Swift package has no macOS-only API" 0 'Packages/Domain › Sources/Domain \(2 Swift file\(s\)\): no macOS-only API' "exit=0
+expect_result "porting: a pure Swift package has no macOS-only API" 0 'Packages/Domain › Sources/Domain \(2 source file\(s\)\): no macOS-only API' "exit=0
 $psum"
 expect_result "porting: macOS-only scenes in the app are found" 0 'DemoApp\.swift:8	Settings scene.*DemoApp\.swift:9	MenuBarExtra' "exit=0
 $(printf '%s' "$pscan" | tr '\n' ' ')"
@@ -1172,6 +1172,10 @@ expect_result "porting: menu commands are an adaptation" 0 'adapt	App	App/DemoAp
 $pscan"
 expect_result "porting: the declared platforms are listed" 0 'Platforms declared:.*- macOS \(Packages/' "exit=0
 $(printf '%s' "$psum" | tr '\n' ' ')"
+expect_result "porting: a C module including IOKit blocks iOS (real-app check)" 0 'blocks	Packages/Shared › Sources/CDisc	Packages/Shared/Sources/CDisc/disc\.c:2	#include <IOKit/storage/IOCDTypes\.h>' "exit=0
+$pscan"
+expect_result "porting: iTunesLibrary, FSEvents and the Core Audio HAL block iOS (real-app check)" 0 'Library\.swift:1	import iTunesLibrary.*Library\.swift:4	Core Audio HAL.*Library\.swift:6	FSEvents' "exit=0
+$(printf '%s' "$pscan" | tr '\n' ' ')"
 expect_result "porting: the summary says a static scan is not a build" 0 'Only a build for iOS proves it builds' "exit=0
 $psum"
 if [ "$pbefore" = "$(snapshot "$PORT")" ]; then ok "porting: the scan changes no file"
