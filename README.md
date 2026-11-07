@@ -198,9 +198,30 @@ A shared component changed for one screen can shift every other screen that uses
 </details>
 
 <details>
+<summary><b>Keyboard, focus order and Reduce Motion</b></summary>
+
+A component that works only with a pointer, or a screen whose Tab order jumps around, passes every other check. Setup offers two test helpers, built on what a test can see on macOS 26 and 27 (measured):
+
+```swift
+let keys = KeyboardCheck.host { SaveBar(onSave: { saved = true }, onCancel: { cancelled = true }) }
+keys.press(.return)                        // the default action
+keys.press(.escape)                        // cancel, onExitCommand, onKeyPress
+keys.press("f", modifiers: .command)       // its shortcut
+
+try FocusOrder.check(app, ["search", "sort", "play", "shuffle", "trackList"])   // a UI test
+```
+
+- `KeyboardCheck` (unit tests, from `templates/tests/KeyboardCheck.swift`) hosts a view in an offscreen window and presses keys on it; the test asserts what the action did. In a package test target it runs in `scripts/verify.sh fast`. It cannot check Tab or focus order (a test process has no key view loop), menu commands, or shortcuts that differ only by Shift (SwiftUI confuses them in a test process; the real app does not).
+- `FocusOrder` (UI tests, from `templates/tests/FocusOrder.swift`) presses Tab in the launched app and checks that focus visits the controls in the order you give, comes back to the first, and that Shift-Tab goes back. Controls join the Tab loop only when Keyboard navigation is on in System Settings: with it off the test is **skipped**, never passed. CI turns it on with `defaults write -g AppleKeyboardUIMode -int 2`. macOS has no public API for keyboard focus in UI tests; the helper reads an undocumented attribute and fails, rather than passes, if it stops working.
+- Reduce Motion cannot be turned on from a test (`accessibilityReduceMotion` is read-only). The design system reference has `@ReduceMotion`, which a test or preview overrides with `.environment(\.reduceMotionOverride, true)`, and `Motion.moving(_:reduced:)`, which drops a moving animation or turns a moving transition into a fade. The `ds_motion_without_reduce` rule reports moving transitions that skip it.
+- What stays a review: actions reachable only by click or hover, focus rings, Escape on presented UI, menu shortcuts, and animations started with `withAnimation`.
+
+</details>
+
+<details>
 <summary><b>The SwiftLint design system rules</b></summary>
 
-The generated `.swiftlint.yml` adds six custom rules that flag raw visual values outside the design system and tests:
+The generated `.swiftlint.yml` adds six custom rules that flag raw visual values outside the design system and tests, and one for Reduce Motion that applies everywhere:
 
 | Rule | Flags |
 |---|---|
@@ -210,6 +231,7 @@ The generated `.swiftlint.yml` adds six custom rules that flag raw visual values
 | `ds_hardcoded_spacing` | `VStack(spacing: 8)` (zero is allowed) |
 | `ds_hardcoded_radius` | `cornerRadius: 8`, `.cornerRadius(6)` |
 | `ds_hardcoded_animation` | `.easeInOut(duration: 0.3)`, `.spring(response: 0.4…)` |
+| `ds_motion_without_reduce` | `.transition(.move(edge: .top))`, `.slide`, `.push`, `.offset`, `.scale` without `Motion.moving(_:reduced:)` (one line) |
 
 They start as warnings, which double as the migration to-do list. Switch a rule to `error` once its count reaches zero.
 

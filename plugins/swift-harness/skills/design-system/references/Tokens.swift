@@ -31,6 +31,37 @@ public enum Motion {
     public static let quick = Animation.snappy(duration: 0.15)
     public static let standard = Animation.snappy(duration: 0.25)
     public static let emphasized = Animation.spring(duration: 0.4, bounce: 0.2)
+
+    /// An animation that moves content (position, size, scale): none under Reduce Motion.
+    /// `.animation(Motion.moving(Motion.standard, reduced: reduceMotion), value: isOpen)`
+    public static func moving(_ animation: Animation, reduced: Bool) -> Animation? {
+        reduced ? nil : animation
+    }
+
+    /// A transition that moves content: a fade under Reduce Motion.
+    /// `.transition(Motion.moving(.move(edge: .top), reduced: reduceMotion))`
+    public static func moving(_ transition: AnyTransition, reduced: Bool) -> AnyTransition {
+        reduced ? .opacity : transition
+    }
+}
+
+/// Reduce Motion as the design system reads it: `@ReduceMotion private var reduceMotion` in a
+/// component. It is the system setting, unless a test or a preview sets
+/// `.environment(\.reduceMotionOverride, true)`: SwiftUI's `accessibilityReduceMotion` is
+/// read-only, so a test cannot turn it on.
+@propertyWrapper
+public struct ReduceMotion: DynamicProperty {
+    @Environment(\.accessibilityReduceMotion) private var system
+    @Environment(\.reduceMotionOverride) private var override
+
+    public init() {}
+
+    public var wrappedValue: Bool { override ?? system }
+}
+
+public extension EnvironmentValues {
+    /// Set by tests and previews to check a component with Reduce Motion on or off.
+    @Entry var reduceMotionOverride: Bool? = nil
 }
 
 // Semantic colors live in Resources/Colors.xcassets with light and dark variants.

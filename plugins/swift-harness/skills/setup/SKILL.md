@@ -59,6 +59,8 @@ For each template, if the target file does not exist, create it with placeholder
 | `tests/Screenshot.swift` | the same test target as `LayoutContract.swift` (see step 7) |
 | `tests/Snapshot.swift` | the same test target as `LayoutContract.swift` (see step 7) |
 | `tests/AccessibilityAudit.swift` | a UI test target (XCUITest) of the app (see step 7, accessibility) |
+| `tests/KeyboardCheck.swift` | the same test target as `LayoutContract.swift`, or the design system package tests (see step 7, keyboard) |
+| `tests/FocusOrder.swift` | the UI test target, next to `AccessibilityAudit.swift` (see step 7, keyboard) |
 | `docs/adr/0000-template.md` | `docs/adr/0000-template.md` |
 | `swiftlint.yml` | `.swiftlint.yml` |
 | `swiftformat` | `.swiftformat` (only if swiftformat was chosen) |
@@ -109,6 +111,11 @@ Skip items 1-6 for apps without resizable windows; item 7 applies to any app wit
 
 
 **Accessibility audit (any app with a UI test target, macOS 14 or iOS 17 and later).** Offer it: copy `tests/AccessibilityAudit.swift` into the app's UI test target and add one test per main screen that launches the app, opens the screen and calls `try AccessibilityAudit.check(app)`. It runs Apple's `performAccessibilityAudit()`: missing descriptions, contrast, hit areas, clipped text, traits. Without a UI test target, propose creating one in Xcode and let the user do it (a new target edits `project.pbxproj`). Run it once: list the issues found. Each one is fixed or, with the user's agreement, listed as an exception in that test with its reason, never silenced for the whole app. UI tests run in `scripts/verify.sh full`.
+
+**Keyboard and focus (any app with shared components; focus order needs a UI test target).** Offer both:
+- Copy `tests/KeyboardCheck.swift` into the test target of the shared components (the design system package's tests when there is one, so `fast` runs them) and add a test per component with keyboard actions: host it, press the keys a user would (`return`, `escape`, arrows, its Command shortcuts) and assert what the action did. Use a `@Suite(.serialized)` with Swift Testing. A component whose action only a click reaches is a finding for the user, not something to hide with a test. It cannot check Tab, focus order, menu commands or shortcuts that differ only by Shift: say so.
+- Copy `tests/FocusOrder.swift` next to `AccessibilityAudit.swift` and add one test per main screen, `try FocusOrder.check(app, [<identifiers in visual order>])`, giving the controls accessibility identifiers where they have none. It needs Keyboard navigation on (System Settings > Keyboard): with it off the test is skipped, and the result says so. Tell the user, and never change that setting on their Mac yourself; on CI add `defaults write -g AppleKeyboardUIMode -int 2` before the UI tests. It reads focus through an undocumented attribute: say that too.
+- Reduce Motion: when the design system follows `references/Tokens.swift` of the design-system skill, components that move content read `@ReduceMotion` and animate through `Motion.moving(_:reduced:)`, and tests set `.environment(\.reduceMotionOverride, true)` (SwiftUI's `accessibilityReduceMotion` cannot be set). The `ds_motion_without_reduce` SwiftLint rule reports moving transitions that skip it.
 ## 8. Companion plugins
 
 Check `/plugin` state and recommend, without installing on your own:
