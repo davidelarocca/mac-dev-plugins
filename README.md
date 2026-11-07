@@ -374,7 +374,7 @@ scripts/verify.sh
 
 ## Roadmap
 
-Next up: **v1.6.0, reliable sessions, keyboard and performance**: per-session state, keyboard and focus checks, a layout audit from the accessibility tree, a docs reference check and a performance budget. Then v1.7.0, assisted macOS to iOS porting, which waits for a real port. The README says macOS until a real iOS app passes. See the full [roadmap](ROADMAP.md).
+Next up: **v1.6.0, reliable sessions, keyboard and performance**: per-session state, keyboard and focus checks, a layout audit from the accessibility tree, a docs reference check and a performance budget. Then v1.7.0, a measured harness (checks tested by planting defects, a drift score, a record of what the checks caught, evals), and v1.8.0, checks on the running app over flows and time. iOS porting follows when a real port exists. The README says macOS until a real iOS app passes. See the full [roadmap](ROADMAP.md).
 
 ## Limitations
 

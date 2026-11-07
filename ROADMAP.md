@@ -2,7 +2,7 @@
 
 Where swift-harness is going, and why. Live status is in the [milestones](https://github.com/davidelarocca/swift-harness/milestones) and [issues](https://github.com/davidelarocca/swift-harness/issues). This page is updated with every release.
 
-_Last updated: 7 November 2026: v1.6.0 is now sessions, keyboard and performance; iOS porting moves to v1.7.0, waiting for a real port._
+_Last updated: 7 November 2026: v1.7.0 is now the measured harness and v1.8.0 checks the running app over time; iOS porting moves to v1.9.0, still waiting for a real port._
 
 **Guiding principle:** every check the harness claims to run must actually run, and must be backed by a test. New features come after the existing gates are reliable, and claims about impact come with measurements.
 
@@ -16,7 +16,32 @@ _Last updated: 7 November 2026: v1.6.0 is now sessions, keyboard and performance
 | 📐 | **Layout check from the accessibility tree** in UI tests: an element cut by the window edge, a text over another, on macOS and iOS. Done, in Unreleased. | [#69](https://github.com/davidelarocca/swift-harness/issues/69) |
 | 🔗 | **Docs reference check.** Broken links, paths and section names in the project docs, and a size budget for what every session reads. | [#70](https://github.com/davidelarocca/swift-harness/issues/70) |
 
-## Next: v1.7.0, assisted macOS to iOS porting
+## Next: v1.7.0, a measured harness
+
+Evidence before new checks: whether the checks catch what they claim, whether a project drifts, and what the harness actually caught.
+
+| | What you get | Issue |
+|---|---|---|
+| 🧪 | **Check sensitivity.** Defects planted one at a time (a literal instead of a token, a shortcut removed, a row too wide, a label removed, a forbidden import): each check must catch its own, and every one that survives is explained. | [#79](https://github.com/davidelarocca/swift-harness/issues/79) |
+| 📉 | **Drift score per commit.** Distinct style values in use and the share through tokens, near-duplicate components, stale registry entries and references, as a curve over the history. | [#80](https://github.com/davidelarocca/swift-harness/issues/80) |
+| 🧾 | **Evidence summary.** What was measured, seen or only inferred in a turn, written from what the checks actually ran, not from Claude's wording. | [#81](https://github.com/davidelarocca/swift-harness/issues/81) |
+| 📒 | **Catch log and `/swift-harness:report`.** What the checks caught and how it ended, kept on your machine. | [#86](https://github.com/davidelarocca/swift-harness/issues/86) |
+| 🗂️ | **Static HTML report** from the existing outputs: read-only, no network, a check not run is never green. | [#87](https://github.com/davidelarocca/swift-harness/issues/87) |
+| 🧳 | **Guest mode.** Run on a project that has its own rules and checks, without setup. | [#71](https://github.com/davidelarocca/swift-harness/issues/71) |
+| 📊 | **Evals with and without swift-harness**: reuse, regressions, build passes, honesty about failures, cost. Published with method and raw data. | [#8](https://github.com/davidelarocca/swift-harness/issues/8) |
+
+## Then: v1.8.0, perception in motion
+
+Today every check on the running app looks at one state at one size. These look at flows, time and a hostile environment.
+
+| | What you get | Issue |
+|---|---|---|
+| 🗺️ | **Real vs declared navigation.** A crawler walks the app through the accessibility tree and compares what it reaches with the product map: unreachable screens, missing links. | [#82](https://github.com/davidelarocca/swift-harness/issues/82) |
+| 🗣️ | **Interaction conventions.** One word per action, menu bar commands and standard shortcuts, empty, loading and error states, confirmation or Undo for destructive actions, pseudo-localization. | [#83](https://github.com/davidelarocca/swift-harness/issues/83) |
+| 🌩️ | **Faults and lifecycle.** Network, disk and permission failures injected in UI tests; save, relaunch and unsaved changes. | [#84](https://github.com/davidelarocca/swift-harness/issues/84) |
+| 🦮 | **Accessibility task check.** An agent finishes a task through the accessibility tree only. | [#85](https://github.com/davidelarocca/swift-harness/issues/85) |
+
+## Then: v1.9.0, assisted macOS to iOS porting
 
 Waits for a real iOS port of a macOS app to check it on: the porting audit of 1.5.0 is there to start one.
 
@@ -24,7 +49,6 @@ Waits for a real iOS port of a macOS app to check it on: the porting audit of 1.
 |---|---|---|
 | 🍎➡️📱 | **Porting in verified slices.** After you accept the plan and the target structure: shared domain first, adapters for platform APIs, then one feature at a time, each built and tested on iOS and on the Mac, with results per platform. Checked on a real port. | [#48](https://github.com/davidelarocca/swift-harness/issues/48) |
 | 📱 | **iOS checked on a real app.** The iOS-aware checks of 1.5.0 used on a real iOS port: the README says iOS once it passes. | [#40](https://github.com/davidelarocca/swift-harness/issues/40) |
-| 🧳 | **Guest mode.** Run on a project that has its own rules and checks, without setup. | [#71](https://github.com/davidelarocca/swift-harness/issues/71) |
 | 🧭 | **Branch scope contract.** Changes outside a branch's paths, and its drift from main, reported. | [#72](https://github.com/davidelarocca/swift-harness/issues/72) |
 | 🔒 | **Porting ratchet.** New macOS-only API in a ported shared module fails. | [#73](https://github.com/davidelarocca/swift-harness/issues/73) |
 | 🚦 | **Shared machine.** UI tests and simulators ask first, take a lock, build only what is ported. | [#74](https://github.com/davidelarocca/swift-harness/issues/74) |
@@ -36,7 +60,7 @@ Waits for a real iOS port of a macOS app to check it on: the porting audit of 1.
 |---|---|---|
 | 👀 | **UI review ritual.** Three window sizes, a gallery of states from UI tests, a keyboard-only pass. | [#67](https://github.com/davidelarocca/swift-harness/issues/67) |
 | 🪤 | **Pitfalls and test isolation.** A pitfalls template, and UI tests that never touch the user's real data. | [#68](https://github.com/davidelarocca/swift-harness/issues/68) |
-| 📊 | **v2.0.0: a measured harness.** Repeatable evals of Claude with and without swift-harness: reuse, regressions, build passes, cost. Published with method and raw data. | [#8](https://github.com/davidelarocca/swift-harness/issues/8) |
+| ⏱️ | **Try it in minutes.** A demo app where the plugin catches something in the first session, and a README organised by problem. | [#88](https://github.com/davidelarocca/swift-harness/issues/88) |
 
 Ideas parked until there is demand: a local, read-only view of the checks with evidence behind every edge and status ([#50](https://github.com/davidelarocca/swift-harness/discussions/50)); persistence migrations, localization, approval across worktrees, docs drift ([#38](https://github.com/davidelarocca/swift-harness/discussions/38)).
 
