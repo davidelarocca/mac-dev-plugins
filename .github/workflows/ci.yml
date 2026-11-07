@@ -179,6 +179,25 @@ jobs:
             grep -q "FocusOrderTests $t\]' passed" "$RUNNER_TEMP/a11y.log" || { echo "FocusOrderTests $t did not pass (skipped?)"; exit 1; }
           done
 
+  ax-layout-spike:
+    name: AX layout spike (temporary, #69)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: macOS
+        working-directory: tests/fixtures/ax-layout-spike
+        run: |
+          xcodebuild -version
+          xcodebuild test -project A11yFixture.xcodeproj -scheme A11yFixture -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/ddm" 2>&1 | tee "$RUNNER_TEMP/mac.log" | grep -E 'SPIKE|Test Case|error:|TEST (SUCCEEDED|FAILED)' || true
+      - name: iOS simulator
+        working-directory: tests/fixtures/ax-layout-spike
+        run: |
+          SIM="$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone")) | .name][0] // empty')"
+          echo "iPhone: $SIM"
+          xcodebuild test -project A11yFixture.xcodeproj -scheme A11yFixture -destination "platform=iOS Simulator,name=$SIM" \
+            -derivedDataPath "$RUNNER_TEMP/ddi" 2>&1 | tee "$RUNNER_TEMP/ios.log" | grep -E 'SPIKE|Test Case|error:|TEST (SUCCEEDED|FAILED)' || true
+
   plugin-validate:
     name: claude plugin validate
     runs-on: ubuntu-latest
