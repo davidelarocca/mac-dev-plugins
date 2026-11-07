@@ -100,6 +100,7 @@ The always-on context cost is about 770 tokens per session. Skills load their fu
 - A result belongs to the code and to the plugin version. After a plugin update, a pass or failure recorded by the old version no longer counts. Unchanged code is not re-run on its own: the check runs at the end of the next turn that changes build inputs, and until then `/swift-harness:doctor` shows the code as not verified.
 - A failure survives a new session: on startup or resume, Claude is told if the last check failed on the current code.
 - Works per git worktree, so parallel agents each verify their own checkout.
+- Docs are checked apart, by `scripts/docs.sh`, which reads Markdown only: a link to a file or heading that does not exist, a path in backticks that does not exist (not in ADRs, audits or archives), a section named in quotes beside a doc that the doc does not have, an `@` import of a missing file, and the files read into every session (`CLAUDE.md` and its imports) over `docs.budget` bytes. Each problem is given as `file:line`. Only problems new in the session block the turn, once; those already there when it started are shown by `/swift-harness:doctor`. Docs are not a build input, so editing them never re-runs the verify command.
 
 </details>
 
@@ -333,6 +334,11 @@ On Claude Code 2.1.275 or later, the first two lines can be one: `/plugin instal
 | `registry.enabled` | check the component registry at the end of the turn, when the file exists | `true` |
 | `registry.path` | the component registry, relative to the repo root | `docs/COMPONENT_REGISTRY.md` |
 | `registry.sources` | design system folders where views, modifiers and styles missing from the registry are looked for | `[]` |
+| `docs.enabled` | check the docs references at the end of the turn | `true` |
+| `docs.paths` | the Markdown files and folders checked | `["CLAUDE.md", "AGENTS.md", "docs"]` |
+| `docs.history` | records of the past, where paths that no longer exist are expected (links are still checked) | `["docs/adr", "docs/audit", "docs/archive", "docs/HISTORY.md", "CHANGELOG.md"]` |
+| `docs.ignore` | folders named before they exist | the snapshots folder and `docs/audit` |
+| `docs.budget` | bytes the files read into every session may take (about 4 bytes a token) | `20000` |
 | `layout.enabled` | check the layout contract at the end of the turn, when the file exists | `true` |
 | `layout.path` | the layout contract, relative to the repo root; `LayoutContract.check` reads it from the same config | `docs/LAYOUT_CONTRACT.md` |
 | `screenshots.path` | where `Screenshot.capture` saves images and `ui-reviewer` looks for them, relative to the repo root | `.build/swift-harness/screenshots` |

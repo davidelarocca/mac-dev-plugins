@@ -397,6 +397,19 @@ else
   esac
 fi
 
+# Docs references (#70). Reads Markdown only.
+if ! sh_docs_on; then
+  row INFO "Docs references" "off (docs.enabled is false)"
+else
+  docs_out="$("$here/docs.sh" check "$SH_ROOT" 2>&1)"
+  if [ $? -eq 0 ]; then
+    row PASS "Docs references" "$("$here/docs.sh" summary "$SH_ROOT"); new broken references block the end of a turn"
+  else
+    count="$(printf '%s\n' "$docs_out" | grep -c '^- ')"
+    row FAIL "Docs references" "$count problem(s): $(printf '%s\n' "$docs_out" | grep '^- ' | head -3 | sed 's/^- //' | paste -sd ';' - | sed 's/;/; /g'). Problems already there when a session starts do not block it; fix them in the docs"
+  fi
+fi
+
 # Snapshot baselines (#9): approved images the project's snapshot tests compare with.
 snapshots="$(sh_snapshots)"
 if [ ! -d "$SH_ROOT/$snapshots" ]; then
