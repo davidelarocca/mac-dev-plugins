@@ -212,6 +212,24 @@ jobs:
           grep -q 'TEST SUCCEEDED' "$RUNNER_TEMP/ios.log"
           grep -q "testTheLargestTextStillShowsTheOverlap\]' passed" "$RUNNER_TEMP/ios.log"
 
+  perf-spike:
+    name: Perf spike (temporary, #33)
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Measure
+        working-directory: tests/fixtures/perf-spike
+        run: |
+          sysctl -n machdep.cpu.brand_string hw.model hw.ncpu; sw_vers -productVersion; xcodebuild -version | head -1
+          swift build --build-tests >/dev/null 2>&1
+          for i in 1 2 3 4 5 6; do swift test 2>&1 | grep PERF; done
+          echo SLOW
+          for i in 1 2 3; do SLOW=1 swift test 2>&1 | grep PERF; done
+
   plugin-validate:
     name: claude plugin validate
     runs-on: ubuntu-latest
