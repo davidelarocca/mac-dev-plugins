@@ -2464,9 +2464,9 @@ if link_ok "$HERE/fixtures/layout-audit/LayoutFixtureUITests/LayoutAudit.swift" 
   ok "layout audit: the CI fixture runs the template helper itself, on macOS and an iOS simulator"
 else nok "layout audit: the CI fixture runs the template helper itself, on macOS and an iOS simulator"; fi
 if grep -qF '| `tests/LayoutAudit.swift` |' "$PLUGIN/skills/setup/SKILL.md" && grep -qF 'has no reason' "$LA" &&
-  grep -qF 'matches no issue' "$LA" && grep -qF 'did not shrink' "$LA"; then
-  ok "layout audit: setup installs it; an exception needs a reason and an issue; a window that did not shrink fails"
-else nok "layout audit: setup installs it; an exception needs a reason and an issue; a window that did not shrink fails"; fi
+  grep -qF 'matches no issue' "$LA" && grep -qF 'it is not resizable' "$LA"; then
+  ok "layout audit: setup installs it; an exception needs a reason and an issue; a window that cannot be resized fails"
+else nok "layout audit: setup installs it; an exception needs a reason and an issue; a window that cannot be resized fails"; fi
 if grep -qF 'cut by its own frame' "$LA" && grep -qF 'status bar' "$LA" && grep -qF 'UILaunchScreen' "$LA" &&
   grep -qF 'INFOPLIST_KEY_UILaunchScreen_Generation = YES' "$HERE/fixtures/layout-audit/LayoutFixture.xcodeproj/project.pbxproj"; then
   ok "layout audit: the header lists what it cannot see, and the iOS fixture has a launch screen"

@@ -133,8 +133,9 @@ enum LayoutAudit {
 
     #if os(macOS)
     /// Drags the bottom-right corner of the first window up and left, to the window's minimum
-    /// size. Fails if the window did not shrink: it is not resizable (then do not call this), or
-    /// the drag did not reach it.
+    /// size. macOS restores a window's last frame, so a window that does not move may already be
+    /// at its minimum: it is grown once to tell. Fails if the window cannot be resized: it is not
+    /// resizable (then do not call this), or the drag did not reach it.
     @MainActor
     static func shrinkWindow(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let window = app.windows.firstMatch
@@ -142,15 +143,26 @@ enum LayoutAudit {
             return XCTFail("LayoutAudit.shrinkWindow: the app has no window.", file: file, line: line)
         }
         let before = window.frame
+        resize(window, by: CGVector(dx: -before.width, dy: -before.height))
+        var after = window.frame
+        if after.size == before.size {
+            resize(window, by: CGVector(dx: 100, dy: 100))
+            let grown = window.frame
+            guard grown.size != before.size else {
+                return XCTFail("LayoutAudit.shrinkWindow: the window stayed \(text(before)); it is not resizable, or the drag did not reach it.", file: file, line: line)
+            }
+            resize(window, by: CGVector(dx: -grown.width, dy: -grown.height))
+            after = window.frame
+        }
+        print("LayoutAudit: window shrunk from \(text(before)) to \(text(after))")
+    }
+
+    /// Drags the bottom-right corner of `window` by `offset`.
+    @MainActor
+    static func resize(_ window: XCUIElement, by offset: CGVector) {
         let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -2, dy: -2))
         // A click-drag (mouse down, move, up): on macOS 27 a press-drag does not reach the window.
-        corner.click(forDuration: 0.5, thenDragTo: corner.withOffset(CGVector(dx: -before.width, dy: -before.height)))
-        let after = window.frame
-        if after.width >= before.width, after.height >= before.height {
-            XCTFail("LayoutAudit.shrinkWindow: the window stayed \(text(before)); it is not resizable, or the drag did not reach it.", file: file, line: line)
-        } else {
-            print("LayoutAudit: window shrunk from \(text(before)) to \(text(after))")
-        }
+        corner.click(forDuration: 0.5, thenDragTo: corner.withOffset(offset))
     }
     #endif
 

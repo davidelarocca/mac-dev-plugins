@@ -57,8 +57,12 @@ final class LayoutFixtureUITests: XCTestCase {
 
     #if os(macOS)
     @MainActor
-    func testAtTheDefaultWindowTheButtonsFit() throws {
-        let issues = try LayoutAudit.issues(launch(smallest: false))
+    func testInAWideWindowTheButtonsFit() throws {
+        let app = launch(smallest: false)
+        // macOS restores the last frame, which may be the minimum from another test.
+        LayoutAudit.resize(app.windows.firstMatch, by: CGVector(dx: 600, dy: 100))
+        XCTAssertGreaterThan(app.windows.firstMatch.frame.width, 600)
+        let issues = try LayoutAudit.issues(app)
         XCTAssertFalse(issues.contains { $0.kind == .cutByEdge }, "\(issues)")
     }
     #endif
