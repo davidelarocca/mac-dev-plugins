@@ -13,9 +13,9 @@
 //
 // UI tests run in `scripts/verify.sh full`, not in `fast`.
 //
-// On macOS the audit also reports parts of the window the system draws, which the app cannot
-// fix: the root group of a SwiftUI window (no description) and the title in the title bar
-// (contrast, when the window is not key). `check` skips exactly these two by default and prints
+// On macOS the audit also reports parts of the window and screen the system draws, which the
+// app cannot fix: the root group of a SwiftUI window, the window buttons, the title text, the
+// system menu bar (see `isWindowChrome`). `check` skips exactly these by default and prints
 // each one it skips; pass `skipWindowChrome: false` to see them fail.
 
 import XCTest
@@ -65,19 +65,30 @@ enum AccessibilityAudit {
         return found
     }
 
-    /// The two system-drawn parts of a macOS window: a group with no identifier and no label that
-    /// fills a window, and a static text inside the top 52 pt of a window (the title bar).
+    /// The parts of a macOS window and screen the system draws, which no app can fix. Measured
+    /// on macOS 26 and 27: the root group that fills a SwiftUI window (no description), the
+    /// window buttons at the left of the title bar, the title text (contrast when the window is
+    /// not key), and elements of the system menu bar above every window that are not menus or
+    /// menu items (the app's own menus stay audited). Toolbar items in the title bar are audited.
     @MainActor
     static func isWindowChrome(_ issue: XCUIAccessibilityAuditIssue, windows: [CGRect]) -> Bool {
         #if os(macOS)
         guard let element = issue.element else { return false }
         let frame = element.frame
+        if let top = windows.map(\.minY).min(), frame.maxY <= top,
+           element.elementType != .menuBarItem, element.elementType != .menuItem, element.elementType != .menu {
+            return true
+        }
         for window in windows where window.contains(frame) {
             if issue.auditType == .sufficientElementDescription, element.elementType == .group,
                element.identifier.isEmpty, element.label.isEmpty, frame == window {
                 return true
             }
-            if issue.auditType == .contrast, element.elementType == .staticText, frame.maxY <= window.minY + 52 {
+            let titleBar = frame.maxY <= window.minY + 52
+            if titleBar, frame.maxX <= window.minX + 90 {
+                return true
+            }
+            if titleBar, issue.auditType == .contrast, element.elementType == .staticText {
                 return true
             }
         }
