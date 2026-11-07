@@ -21,40 +21,45 @@ if [ "$(sh_in '.source')" = "compact" ]; then
   git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1 || exit 0
   state="$(sh_state_path)"
   [ -d "$state" ] || exit 0
-  "$(dirname "$0")/checkpoint.sh" "$SH_ROOT" "$state" "$verify_cmd"
+  "$(dirname "$0")/checkpoint.sh" "$SH_ROOT" "$state" "$verify_cmd" "$(sh_session_path "$state")"
   exit 0
 fi
 
 if git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-  state="$(sh_state_dir)" && {
+  state="$(sh_state_dir)" && sess="$(sh_session_dir "$state")" && {
+    # Session folders untouched for SH_SESSION_MAX_DAYS days, and the per-session files that
+    # lived in the project folder before #61.
+    find "$state/sessions" -mindepth 1 -maxdepth 1 -type d -mtime +"$SH_SESSION_MAX_DAYS" -exec rm -rf {} + 2>/dev/null
+    (cd "$state" && rm -f baseline failures verified unapproved-warned contract-start.json contract-start.none \
+      contract-warned snapshots-start snapshots-warned snapshots-approved protected-start protected-warned \
+      protected-edited session-head session-dirty security-start security-start-unreviewed security-approval-warned)
     fp="$(sh_identity)"
-    printf '%s' "$fp" > "$state/baseline"
-    printf '0' > "$state/failures"
-    rm -f "$state/verified" # pre-1.0.1 name of the baseline file
+    printf '%s' "$fp" > "$sess/baseline"
+    printf '0' > "$sess/failures"
     # The contract as it was at session start, for contract-watch.sh (#13).
-    rm -f "$state/contract-start.json" "$state/contract-start.none" "$state/contract-warned"
+    rm -f "$sess/contract-start.json" "$sess/contract-start.none" "$sess/contract-warned"
     if [ -f "$SH_ROOT/$SH_CONTRACT" ]; then
-      cp "$SH_ROOT/$SH_CONTRACT" "$state/contract-start.json"
+      cp "$SH_ROOT/$SH_CONTRACT" "$sess/contract-start.json"
     else
-      : >"$state/contract-start.none"
+      : >"$sess/contract-start.none"
     fi
     # The snapshot baselines as they were at session start, for snapshot-watch.sh (#9).
-    rm -f "$state/snapshots-warned" "$state/snapshots-approved"
-    sh_snapshot_list "$(sh_snapshots)" >"$state/snapshots-start"
+    rm -f "$sess/snapshots-warned" "$sess/snapshots-approved"
+    sh_snapshot_list "$(sh_snapshots)" >"$sess/snapshots-start"
     # Protected files as they were at session start, for protected-watch.sh (#11).
-    rm -f "$state/protected-warned" "$state/protected-edited"
-    sh_protected_list >"$state/protected-start"
+    rm -f "$sess/protected-warned" "$sess/protected-edited"
+    sh_protected_list >"$sess/protected-start"
     # Where the session started, for the checkpoint after a compaction (#10).
-    git -C "$SH_ROOT" rev-parse HEAD >"$state/session-head" 2>/dev/null || : >"$state/session-head"
-    sh_dirty_list >"$state/session-dirty"
+    git -C "$SH_ROOT" rev-parse HEAD >"$sess/session-head" 2>/dev/null || : >"$sess/session-head"
+    sh_dirty_list >"$sess/session-dirty"
     # The security settings as they are the first time, the baseline the user can approve (#32).
     [ "$(sh_cfg '.security.enabled' 'true')" = "true" ] &&
       "$(dirname "$0")/security.sh" --record --project "$SH_ROOT" >/dev/null 2>&1
     # The approved security state at session start: an approval made during the session is
     # shown to the user at the end of the turn (protected-watch.sh), whoever ran it.
-    rm -f "$state/security-start" "$state/security-start-unreviewed" "$state/security-approval-warned"
-    [ -f "$state/security-approved" ] && cp "$state/security-approved" "$state/security-start"
-    [ -f "$state/security-unreviewed" ] && : >"$state/security-start-unreviewed"
+    rm -f "$sess/security-start" "$sess/security-start-unreviewed" "$sess/security-approval-warned"
+    [ -f "$state/security-approved" ] && cp "$state/security-approved" "$sess/security-start"
+    [ -f "$state/security-unreviewed" ] && : >"$sess/security-start-unreviewed"
     if [ -n "$fp" ] && [ "$fp" = "$(cat "$state/failed" 2>/dev/null)" ]; then
       echo "swift-harness: the last verification ('$verify_cmd') failed on the current code and has not passed since. Treat the project as not verified."
     fi

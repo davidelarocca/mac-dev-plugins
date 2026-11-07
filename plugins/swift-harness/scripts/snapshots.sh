@@ -141,7 +141,9 @@ for name in "${names[@]}"; do
     echo "swift-harness: cannot write $png. Stopped after the images listed above." >&2
     exit 1
   fi
-  printf '%s %s\n%s %s\n' "$(sha "$png")" "$baselines/$name.png" "$(sha "$json")" "$baselines/$name.json" >>"$state/snapshots-approved"
+  # Approved for every session open on the project (#61), not just the one that ran this.
+  printf '%s %s\n%s %s\n' "$(sha "$png")" "$baselines/$name.png" "$(sha "$json")" "$baselines/$name.json" |
+    sh_sessions_append "$state" snapshots-approved snapshots-start
   rm -f "$candidates/$name.png" "$candidates/$name.json" "$candidates/$name.diff.png" "$candidates/$name.result.json"
   printf 'Approved: %s/%s.png (%s)\n' "$baselines" "$name" "$status"
 done

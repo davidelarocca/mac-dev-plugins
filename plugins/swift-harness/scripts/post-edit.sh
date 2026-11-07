@@ -17,8 +17,10 @@ record_protected_edit() {
   jq -e '(.protectedPaths // []) | length > 0' "$SH_CONFIG" >/dev/null 2>&1 || return 0
   prel="$(sh_relpath "$file")"
   pstate="$(sh_state_path)"
-  [ -n "$prel" ] && [ -f "$pstate/protected-start" ] || return 0
-  sh_protected_list | awk -v p="$prel" 'substr($0, index($0, " ") + 1) == p' >>"$pstate/protected-edited"
+  [ -n "$prel" ] && [ -d "$pstate/sessions" ] || return 0
+  # Every session open on the project (#61): the user was asked, in whichever session it was.
+  sh_protected_list | awk -v p="$prel" 'substr($0, index($0, " ") + 1) == p' |
+    sh_sessions_append "$pstate" protected-edited protected-start
 }
 trap record_protected_edit EXIT
 [[ "$file" == *.swift ]] || exit 0

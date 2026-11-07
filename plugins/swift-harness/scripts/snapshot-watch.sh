@@ -10,7 +10,8 @@
 sh_init || exit 0
 export LC_ALL=C
 state="$(sh_state_dir)" || exit 0
-start="$state/snapshots-start"
+sess="$(sh_session_path "$state")"
+start="$sess/snapshots-start"
 [ -f "$start" ] || exit 0 # no list for this session
 
 folder="$(sh_snapshots)"
@@ -19,7 +20,7 @@ sh_snapshot_list "$folder" >"$now"
 
 # Lines "<sha> <path>" present now and not at the start (added or changed), minus approved
 # ones; paths present at the start and gone now (deleted).
-changed="$(comm -13 "$start" "$now" | { if [ -f "$state/snapshots-approved" ]; then grep -vxF -f "$state/snapshots-approved"; else cat; fi; } | cut -d' ' -f2-)"
+changed="$(comm -13 "$start" "$now" | { if [ -f "$sess/snapshots-approved" ]; then grep -vxF -f "$sess/snapshots-approved"; else cat; fi; } | cut -d' ' -f2-)"
 deleted="$(comm -23 <(cut -d' ' -f2- "$start" | sort -u) <(cut -d' ' -f2- "$now" | sort -u))"
 rm -f "$now"
 [ -n "$changed$deleted" ] || exit 0
@@ -29,8 +30,8 @@ report="$(
   [ -n "$deleted" ] && printf '%s\n' "$deleted" | sed 's/^/  deleted: /'
 )"
 sum="$(printf '%s' "$report" | shasum | cut -d' ' -f1)"
-[ "$sum" = "$(cat "$state/snapshots-warned" 2>/dev/null)" ] && exit 0
-printf '%s' "$sum" >"$state/snapshots-warned"
+[ "$sum" = "$(cat "$sess/snapshots-warned" 2>/dev/null)" ] && exit 0
+printf '%s' "$sum" >"$sess/snapshots-warned"
 
 msg="swift-harness: snapshot baselines in $folder/ changed in this session without /swift-harness:approve-snapshots:
 $(printf '%s\n' "$report" | head -20)
