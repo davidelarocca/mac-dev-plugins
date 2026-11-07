@@ -200,7 +200,7 @@ A shared component changed for one screen can shift every other screen that uses
 <details>
 <summary><b>Keyboard, focus order and Reduce Motion</b></summary>
 
-A component that works only with a pointer, or a screen whose Tab order jumps around, passes every other check. Setup offers two test helpers, measured on macOS 27 for what a test can see:
+A component that works only with a pointer, or a screen whose Tab order jumps around, passes every other check. Setup offers two test helpers, built on what a test can see on macOS 26 and 27 (measured):
 
 ```swift
 let keys = KeyboardCheck.host { SaveBar(onSave: { saved = true }, onCancel: { cancelled = true }) }

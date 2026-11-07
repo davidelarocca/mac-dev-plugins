@@ -24,7 +24,7 @@
 // focusable views, host the one under test, or give the component a way to set its focus.
 // Shortcuts (defaultAction, cancelAction, Command combinations) work wherever focus is.
 //
-// What it cannot check, measured on macOS 27: Tab and focus order (a test process has no key
+// What it cannot check, measured on macOS 26 and 27: Tab and focus order (a test process has no key
 // view loop: Tab does not move focus), the app's menu commands, and shortcuts that differ only
 // by Shift (in a test process SwiftUI can take Command-F for a Command-Shift-F shortcut on the
 // same letter, and the other way round; the real app tells them apart). Check those in a UI
