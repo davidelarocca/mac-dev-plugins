@@ -1162,9 +1162,9 @@ expect_result "porting: the UIKit branch of #else is not reported" 0 'PlatformIm
 $pscan" 'PlatformImage\.swift:(6|7)'
 expect_result "porting: hover is a UI adaptation" 0 'adapt	.*PlatformImage\.swift:13	hover' "exit=0
 $pscan"
-expect_result "porting: comments and strings are not code" 0 'Shared' "exit=0
-$pscan" 'Track\.swift'
-expect_result "porting: a pure Swift package has no macOS-only API" 0 'Packages/Domain › Sources/Domain \(1 Swift file\(s\)\): no macOS-only API' "exit=0
+expect_result "porting: comments, strings and multiline strings are not code (review #7)" 0 'Shared' "exit=0
+$pscan" 'Track\.swift|Help\.swift'
+expect_result "porting: a pure Swift package has no macOS-only API" 0 'Packages/Domain › Sources/Domain \(2 source file\(s\)\): no macOS-only API' "exit=0
 $psum"
 expect_result "porting: macOS-only scenes in the app are found" 0 'DemoApp\.swift:8	Settings scene.*DemoApp\.swift:9	MenuBarExtra' "exit=0
 $(printf '%s' "$pscan" | tr '\n' ' ')"
@@ -1172,6 +1172,10 @@ expect_result "porting: menu commands are an adaptation" 0 'adapt	App	App/DemoAp
 $pscan"
 expect_result "porting: the declared platforms are listed" 0 'Platforms declared:.*- macOS \(Packages/' "exit=0
 $(printf '%s' "$psum" | tr '\n' ' ')"
+expect_result "porting: a C module including IOKit blocks iOS (real-app check)" 0 'blocks	Packages/Shared › Sources/CDisc	Packages/Shared/Sources/CDisc/disc\.c:2	#include <IOKit/storage/IOCDTypes\.h>' "exit=0
+$pscan"
+expect_result "porting: iTunesLibrary, FSEvents and the Core Audio HAL block iOS (real-app check)" 0 'Library\.swift:1	import iTunesLibrary.*Library\.swift:4	Core Audio HAL.*Library\.swift:6	FSEvents' "exit=0
+$(printf '%s' "$pscan" | tr '\n' ' ')"
 expect_result "porting: the summary says a static scan is not a build" 0 'Only a build for iOS proves it builds' "exit=0
 $psum"
 if [ "$pbefore" = "$(snapshot "$PORT")" ]; then ok "porting: the scan changes no file"
@@ -2063,6 +2067,296 @@ set_config "$S" '{"snapshots":{"path":"../x","pth":1}}'
 out="$(doctor "$S")"
 expect_row "doctor: a baselines folder outside the project fails the config" "$out" FAIL Config 'snapshots.path must be a folder inside the project'
 expect_row "doctor: an unknown snapshots key warns" "$out" WARN 'Config keys' 'snapshots.pth'
+
+# ---------- security settings (#32) ----------
+
+sec() { CLAUDE_PLUGIN_DATA="$TMP/data" "$SCRIPTS/security.sh" "$@"; }
+sec_project() { # $1 name; an app with a sandboxed entitlements file, hardened runtime and an Info.plist
+  local p
+  p="$(new_project "$1")"
+  set_config "$p" '{"format":"none","lint":"none","verify":{"enabled":false,"maxAttempts":20}}'
+  mkdir -p "$p/App"
+  cat >"$p/App/App.entitlements" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+</dict>
+</plist>
+EOF
+  cat >"$p/App/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>App</string>
+</dict>
+</plist>
+EOF
+  printf '// !$*UTF8*$!\n{\n\t\t\t\tCODE_SIGN_ENTITLEMENTS = App/App.entitlements;\n\t\t\t\tENABLE_HARDENED_RUNTIME = YES;\n\t\t\t\tENABLE_HARDENED_RUNTIME = YES;\n\t\t\t\tPRODUCT_NAME = App;\n}\n' >"$p/App.xcodeproj/project.pbxproj"
+  git -C "$p" add -A && git -C "$p" commit -qm "app"
+  printf '%s' "$p"
+}
+entitle() { # $1 project, $2 plutil key, $3 value: add or change an entitlement
+  plutil -replace "$2" -bool "$3" "$1/App/App.entitlements"
+}
+
+P="$(sec_project security)"
+out="$(sec state --project "$P")"
+expect_result "security: entitlements are read key by key" 0 'App/App\.entitlements: com\.apple\.security\.app-sandbox = true' "exit=0
+$out"
+expect_result "security: signing build settings are read, with how many configurations set them" 0 'project\.pbxproj: ENABLE_HARDENED_RUNTIME = YES \(2 configurations\)' "exit=0
+$out" 'PRODUCT_NAME'
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+expect_result "security: an unchanged state passes the end-of-turn check" 0 '^exit=0' "$(rstop "$P")" 'Security settings'
+
+echo 'let app = 2' >"$P/Sources/App.swift"
+entitle "$P" 'com\.apple\.security\.cs\.disable-library-validation' YES
+out="$(rstop "$P")"
+expect_result "security: a hardened runtime exception blocks the turn, naming it" 2 '\+ App/App\.entitlements: com\.apple\.security\.cs\.disable-library-validation = true' "$out"
+expect_result "security: the block says only the user approves it" 2 'only they approve it.*/swift-harness:approve-security' "$out"
+expect_result "security: the check runs without the verify command approval" 2 'security settings' "$out"
+expect_row "doctor: changed security settings fail, with the change" "$(doctor "$P")" FAIL 'Security settings' 'disable-library-validation'
+
+git -C "$P" checkout -q -- App/App.entitlements
+plutil -remove 'com\.apple\.security\.app-sandbox' "$P/App/App.entitlements"
+expect_result "security: removing the sandbox blocks the turn" 2 '\- App/App\.entitlements: com\.apple\.security\.app-sandbox = true' "$(rstop "$P")"
+
+git -C "$P" checkout -q -- App/App.entitlements
+perl -0pi -e 's/ENABLE_HARDENED_RUNTIME = YES/ENABLE_HARDENED_RUNTIME = NO/' "$P/App.xcodeproj/project.pbxproj"
+expect_result "security: turning hardened runtime off in one configuration blocks the turn" 2 'ENABLE_HARDENED_RUNTIME = NO' "$(rstop "$P")"
+
+git -C "$P" checkout -q -- App.xcodeproj/project.pbxproj
+plutil -insert NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true}' "$P/App/Info.plist"
+expect_result "security: an ATS exception blocks the turn" 2 'App/Info\.plist: NSAppTransportSecurity\.NSAllowsArbitraryLoads = true' "$(rstop "$P")"
+
+out="$(sec --status --project "$P")"
+expect_result "security: status lists the change and a digest" 0 'NSAllowsArbitraryLoads = true.*Digest: [0-9a-f]{64}' "exit=0
+$(printf '%s' "$out" | tr '\n' ' ')"
+out2="$(sec --approve 0000 --project "$P" 2>&1)"
+expect_result "security: a wrong digest approves nothing" 1 'Nothing approved' "exit=$?
+$out2"
+expect_result "security: approving needs the plugin data folder" 1 'CLAUDE_PLUGIN_DATA is not set' "exit=1
+$(CLAUDE_PLUGIN_DATA='' "$SCRIPTS/security.sh" --status --project "$P" 2>&1)"
+d="$(printf '%s' "$out" | sed -n 's/^Digest: //p')"
+sec --approve "$d" --project "$P" >/dev/null
+echo 'let app = 3' >"$P/Sources/App.swift"
+expect_result "security: once approved, the same settings pass" 0 '^exit=0' "$(rstop "$P")" 'Security settings'
+expect_row "doctor: approved security settings pass" "$(doctor "$P")" PASS 'Security settings' 'unchanged since approval'
+
+entitle "$P" 'com\.apple\.security\.cs\.allow-jit' YES
+echo 'let app = 4' >"$P/Sources/App.swift"
+set_config "$P" '{"format":"none","lint":"none","verify":{"enabled":false,"maxAttempts":20},"security":{"enabled":false}}'
+out="$(rstop "$P")"
+expect_result "security: turning the check off in the config is itself a change to approve (review #2)" 2 '\+ \.claude/swift-harness\.json: security\.enabled = false' "$out"
+expect_result "security: the change made while turning it off is still shown" 2 'allow-jit = true' "$out"
+expect_row "doctor: security turned off without approval fails" "$(doctor "$P")" FAIL 'Security settings' 'security\.enabled = false'
+d="$(sec --status --project "$P" | sed -n 's/^Digest: //p')"
+sec --approve "$d" --project "$P" >/dev/null
+echo 'let app = 5' >"$P/Sources/App.swift"
+expect_result "security: once the user approved it off, the check is off" 0 '^exit=0' "$(rstop "$P")" 'Security settings'
+expect_row "doctor: security turned off with approval is a warning" "$(doctor "$P")" WARN 'Security settings' 'approved turning it off'
+set_config "$P" '{"security":{"enabled":"yes","x":1}}'
+out="$(doctor "$P")"
+expect_row "doctor: security.enabled must be a boolean" "$out" FAIL Config 'security.enabled must be true or false'
+expect_row "doctor: an unknown security key warns" "$out" WARN 'Config keys' 'security.x'
+
+# The first baseline is recorded, not approved: doctor says so and names what weakens protection.
+P="$(sec_project security-unreviewed)"
+entitle "$P" 'com\.apple\.security\.cs\.allow-jit' YES
+git -C "$P" commit -qam "jit" >/dev/null 2>&1
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+out="$(doctor "$P")"
+expect_row "security: an automatic baseline is not reviewed, and doctor says so" "$out" WARN 'Security settings' 'recorded automatically on [0-9-]+ and not reviewed by you'
+expect_row "security: doctor names what already weakens protection in it" "$out" WARN 'Security settings' 'allow-jit = true'
+out="$(sec --status --project "$P")"
+expect_result "security: approve-security lists an unreviewed baseline in full" 0 'recorded automatically.*app-sandbox = true.*weakening protection:.*allow-jit = true' "exit=0
+$(printf '%s' "$out" | tr '\n' ' ')"
+sec --approve "$(printf '%s' "$out" | sed -n 's/^Digest: //p')" --project "$P" >/dev/null
+expect_row "security: once reviewed, the baseline passes" "$(doctor "$P")" PASS 'Security settings' 'unchanged since approval'
+expect_result "security: marking the automatic baseline reviewed in a session is shown to the user" 0 'baseline was approved in this session.*marked as reviewed' "exit=0
+$(hook protected-watch.sh "$P" 2>&1 | tr '\n' ' ')"
+
+# Review #3: code signing identity and whether signing is allowed are security settings.
+P="$(sec_project security-signing)"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+perl -0pi -e 's/PRODUCT_NAME = App;/PRODUCT_NAME = App;\n\t\t\t\tCODE_SIGN_IDENTITY = "-";\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;/' "$P/App.xcodeproj/project.pbxproj"
+out="$(rstop "$P")"
+expect_result "security: ad hoc signing identity is a change (review #3)" 2 'CODE_SIGN_IDENTITY = -' "$out"
+expect_result "security: signing turned off is a change (review #3)" 2 'CODE_SIGNING_ALLOWED = NO' "$out"
+# Review #1: an approval made in the session, by whoever ran it, is shown to the user.
+d="$(sec --status --project "$P" | sed -n 's/^Digest: //p')"
+sec --approve "$d" --project "$P" >/dev/null
+out="$(hook protected-watch.sh "$P" 2>&1 | tr '\n' ' ')"
+expect_result "security: an approval made in this session is shown to the user (review #1)" 0 'systemMessage.*baseline was approved in this session.*CODE_SIGNING_ALLOWED = NO.*did not type /swift-harness:approve-security yourself' "exit=0
+$out"
+expect_result "security: the approval notice is shown once" 0 '^exit=0$' "exit=$(hook protected-watch.sh "$P" >/dev/null 2>&1; echo $?)$(hook protected-watch.sh "$P" 2>&1)"
+
+P="$(sec_project security-new)"
+expect_row "doctor: before the first session, the baseline is not recorded yet" "$(doctor "$P")" INFO 'Security settings' 'no baseline yet'
+mkdir -p "$P/Helper"
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>\n' >"$P/Helper/Helper.entitlements"
+expect_result "security: a new entitlements file is a change too" 2 'Helper/Helper\.entitlements: com\.apple\.security\.cs\.allow-unsigned-executable-memory = true' "$(rstop "$P")"
+
+# ---------- concurrency escape hatches (#37) ----------
+# Real SwiftLint with the setup template: the rules are regexes, so test them as SwiftLint runs them.
+
+if ! command -v swiftlint >/dev/null 2>&1; then
+  printf 'skip  concurrency: swiftlint not installed, the template rules were not run\n'
+else
+  # Not under $TMP: with an `excluded:` list, SwiftLint 0.65 ignores the baseline in folders
+  # reached through /var or /tmp (both links to /private), so test where projects live.
+  L="$HERE/../.build/concurrency-test"
+  rm -rf "$L"
+  mkdir -p "$L/Sources"
+  sed 's/{{DS_EXCLUDED_REGEX}}/DesignSystem/' "$PLUGIN/skills/setup/templates/swiftlint.yml" >"$L/.swiftlint.yml"
+  cat >"$L/Sources/Old.swift" <<'EOF'
+final class OldCache: @unchecked Sendable {}
+EOF
+  (cd "$L" && swiftlint lint --quiet --write-baseline .baseline.json >/dev/null 2>&1)
+  cat >"$L/Sources/New.swift" <<'EOF'
+import Foundation
+@preconcurrency import Dispatch
+
+final class Cache: @unchecked Sendable {}
+final class Guarded: @unchecked Sendable {} // concurrency: every access holds lock
+final class Fake: @unchecked Sendable { let note = "// concurrency: fake justification" }
+final class Later: @unchecked Sendable { let label = "x" } // concurrency: guarded by a queue
+nonisolated(unsafe) var counter = 0
+@MainActor func update() {}
+func callback() { MainActor.assumeIsolated { update() } }
+// A comment about @unchecked Sendable and nonisolated(unsafe) is not code.
+let text = "@preconcurrency in a string is not code"
+EOF
+  lint="$(cd "$L" && swiftlint lint --quiet --baseline .baseline.json 2>&1)"
+  for case_ in 'New.swift:2:.*concurrency_preconcurrency' 'New.swift:4:.*concurrency_unchecked_sendable' 'New.swift:8:.*concurrency_nonisolated_unsafe' 'New.swift:10:.*concurrency_assume_isolated' 'New.swift:6:.*concurrency_unchecked_sendable'; do
+    if grep -qE "$case_" <<<"$lint"; then ok "concurrency: reported: ${case_%%.\**}"; else nok "concurrency: reported: $case_" "$lint"; fi
+  done
+  if grep -qE 'New\.swift:(5|7|11|12):' <<<"$lint"; then nok "concurrency: a justified use (also after a string), a comment and a string are not reported" "$lint"
+  else ok "concurrency: a justified use (also after a string), a comment and a string are not reported"; fi
+  if grep -q 'Old\.swift' <<<"$lint"; then nok "concurrency: the baseline keeps existing uses" "$lint"
+  else ok "concurrency: the baseline keeps existing uses"; fi
+  if grep -qF '// concurrency: <why it is safe>' <<<"$lint"; then ok "concurrency: the message says how to justify a needed one"
+  else nok "concurrency: the message says how to justify a needed one" "$lint"; fi
+  rm -rf "$L"
+fi
+if grep -qF '// concurrency: <why it is safe>' "$PLUGIN/skills/setup/templates/rules/architecture.md"; then ok "concurrency: the architecture rule says what to try first and how to justify"
+else nok "concurrency: the architecture rule says what to try first and how to justify"; fi
+
+# ---------- protected paths changed outside Edit and Write (#11) ----------
+
+pwatch() { # $1 project
+  local out code
+  out="$(hook protected-watch.sh "$1" 2>&1)"
+  code=$?
+  printf 'exit=%s\n%s' "$code" "$out"
+}
+P="$(new_project protected-watch)"
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+expect_result "protected-watch: nothing changed says nothing" 0 '^exit=0$' "$(pwatch "$P")"
+echo 'let tool = 2' >"$P/Sources/AudioTools/Tool.swift"
+expect_result "protected-watch: a change outside the protected paths says nothing" 0 '^exit=0$' "$(pwatch "$P")"
+echo 'let engine = 2' >>"$P/Sources/Audio/Engine.swift"
+out="$(pwatch "$P")"
+expect_result "protected-watch: a protected file changed by a shell command is shown to the user" 0 'systemMessage.*without going through Edit or Write.*changed: Sources/Audio/Engine\.swift' "$out"
+expect_result "protected-watch: it never blocks" 0 '^exit=0' "$out"
+expect_result "protected-watch: the same change is shown once" 0 '^exit=0$' "$(pwatch "$P")"
+echo 'let mixer = 1' >"$P/Sources/Audio/Mixer.swift"
+rm "$P/Sources/Audio/Engine.swift"
+out="$(pwatch "$P")"
+expect_result "protected-watch: a new file in a protected folder is shown" 0 'changed: Sources/Audio/Mixer\.swift' "$out"
+expect_result "protected-watch: a deleted protected file is shown" 0 'deleted: Sources/Audio/Engine\.swift' "$out"
+
+P="$(new_project protected-edit)"
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'let engine = 3' >"$P/Sources/Audio/Engine.swift"
+post_edit "$P" "$P/Sources/Audio/Engine.swift" >/dev/null
+expect_result "protected-watch: an edit through the guarded tools is not reported" 0 '^exit=0$' "$(pwatch "$P")"
+echo '// later, by sed' >>"$P/Sources/Audio/Engine.swift"
+expect_result "protected-watch: a shell change after a guarded edit is reported" 0 'changed: Sources/Audio/Engine\.swift' "$(pwatch "$P")"
+printf '<plist/>\n' >"$P/Info.plist"
+set_config "$P" '{"protectedPaths":["Info.plist"]}'
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+printf '<plist version="1.0"/>\n' >"$P/Info.plist"
+post_edit "$P" "$P/Info.plist" >/dev/null
+expect_result "protected-watch: a guarded edit of a non-Swift protected file is not reported" 0 '^exit=0$' "$(pwatch "$P")"
+
+# Review #5: a protected path that is a symlink to a folder is watched through the link.
+P="$(new_project protected-link)"
+mkdir -p "$P/real"
+echo 'secret = 1' >"$P/real/secret.txt"
+ln -s real "$P/Protected"
+set_config "$P" '{"protectedPaths":["Protected"]}'
+git -C "$P" add -A && git -C "$P" commit -qm "link" >/dev/null 2>&1
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+echo 'secret = 2' >"$P/real/secret.txt"
+expect_result "protected-watch: a change behind a symlinked protected folder is shown (review #5)" 0 'changed: Protected/secret\.txt' "$(pwatch "$P")"
+
+P="$(new_project protected-nosession)"
+echo 'let engine = 4' >>"$P/Sources/Audio/Engine.swift"
+expect_result "protected-watch: without a session-start list it says nothing" 0 '^exit=0$' "$(pwatch "$P")"
+if jq -e '.hooks.Stop[0].hooks | map(.command) | any(test("protected-watch"))' "$PLUGIN/hooks/hooks.json" >/dev/null; then
+  ok "protected-watch: registered as a Stop hook"
+else nok "protected-watch: registered as a Stop hook"; fi
+
+# ---------- checkpoint after compaction (#10) ----------
+
+compact() { hook session-start.sh "$1" '{"source":"compact"}' 2>&1; }
+P="$(new_project checkpoint)"
+set_config "$P" '{"format":"none","lint":"none","verify":{"command":"scripts/verify.sh fast","maxAttempts":5}}'
+git -C "$P" add -A && git -C "$P" commit -qm "start" >/dev/null 2>&1
+approve "$P" >/dev/null
+echo '# Project' >"$P/CLAUDE.md"
+git -C "$P" add -A && git -C "$P" commit -qm "docs" >/dev/null 2>&1
+hook session-start.sh "$P" '{"source":"startup"}' >/dev/null
+out="$(compact "$P")"
+expect_result "checkpoint: right after the start, no code changed" 0 'checkpoint after compaction.*Verification: no code changed' "exit=0
+$(printf '%s' "$out" | tr '\n' ' ')"
+echo 'let app = 2' >"$P/Sources/App.swift"
+out="$(compact "$P")"
+expect_result "checkpoint: names the branch and the files changed in the session" 0 'Branch: (main|master); 1 file\(s\) changed in this session: Sources/App\.swift' "exit=0
+$out"
+expect_result "checkpoint: changed code not checked yet is NOT verified" 0 'Verification: NOT verified' "exit=0
+$out"
+expect_result "checkpoint: points to the docs to reread" 0 'Source of truth, reread before relying on memory: CLAUDE\.md' "exit=0
+$out"
+: >"$LOG"
+FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT=1 hook stop-verify.sh "$P" >/dev/null 2>&1
+if [ "$(grep -c . "$LOG")" = 1 ]; then ok "checkpoint: a compaction does not reset the session baseline"
+else nok "checkpoint: a compaction does not reset the session baseline" "verify runs: $(grep -c . "$LOG")"; fi
+expect_result "checkpoint: a failed check on the current code is FAILED" 0 'Verification: FAILED on the current code' "exit=0
+$(compact "$P")"
+echo 'let app = 3' >"$P/Sources/App.swift"
+FAKE_VERIFY_LOG="$LOG" FAKE_VERIFY_EXIT=0 hook stop-verify.sh "$P" >/dev/null 2>&1
+expect_result "checkpoint: a passed check on the current code is passed" 0 'Verification: passed on the current code' "exit=0
+$(compact "$P")"
+git -C "$P" commit -qam "work" >/dev/null 2>&1
+expect_result "checkpoint: commits made in the session are counted" 0 '1 commit\(s\) since the session started' "exit=0
+$(compact "$P")"
+printf '%s\n' 'echo changed' >>"$P/scripts/verify.sh"
+expect_result "checkpoint: an unapproved verify command is waiting" 0 'Waiting:.*verify command is not approved' "exit=0
+$(compact "$P" | tr '\n' ' ')"
+if jq -e '.hooks.SessionStart[0].matcher | split("|") | index("compact")' "$PLUGIN/hooks/hooks.json" >/dev/null; then
+  ok "checkpoint: session-start runs after a compaction"
+else nok "checkpoint: session-start runs after a compaction"; fi
+
+# ---------- accessibility audit template (#36) ----------
+A11Y="$HERE/fixtures/accessibility"
+if [ "$(readlink "$A11Y/A11yFixtureUITests/AccessibilityAudit.swift")" = "../../../../plugins/swift-harness/skills/setup/templates/tests/AccessibilityAudit.swift" ] &&
+  cmp -s "$A11Y/A11yFixtureUITests/AccessibilityAudit.swift" "$PLUGIN/skills/setup/templates/tests/AccessibilityAudit.swift"; then
+  ok "accessibility: the CI fixture runs the template helper itself"
+else nok "accessibility: the CI fixture runs the template helper itself"; fi
+if grep -qF 'has no reason' "$PLUGIN/skills/setup/templates/tests/AccessibilityAudit.swift" &&
+  grep -qF '| `tests/AccessibilityAudit.swift` |' "$PLUGIN/skills/setup/SKILL.md"; then
+  ok "accessibility: exceptions need a reason, and setup installs the helper"
+else nok "accessibility: exceptions need a reason, and setup installs the helper"; fi
 
 # ---------- summary ----------
 

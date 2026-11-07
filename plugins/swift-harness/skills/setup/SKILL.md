@@ -58,6 +58,7 @@ For each template, if the target file does not exist, create it with placeholder
 | `tests/LayoutContract.swift` | a test target that can import SwiftUI and the screens, without a sandboxed host app (see step 7) |
 | `tests/Screenshot.swift` | the same test target as `LayoutContract.swift` (see step 7) |
 | `tests/Snapshot.swift` | the same test target as `LayoutContract.swift` (see step 7) |
+| `tests/AccessibilityAudit.swift` | a UI test target (XCUITest) of the app (see step 7, accessibility) |
 | `docs/adr/0000-template.md` | `docs/adr/0000-template.md` |
 | `swiftlint.yml` | `.swiftlint.yml` |
 | `swiftformat` | `.swiftformat` (only if swiftformat was chosen) |
@@ -80,7 +81,7 @@ Rules for filling templates:
 
 - Missing tools: tell the user the exact install command (`brew install swiftlint swiftformat jq`). Do not install them yourself.
 - Run `scripts/verify.sh fast` once. Report the result. If it fails for reasons unrelated to setup, record that in the summary instead of fixing it now.
-- Run SwiftLint once on the whole project and report the count per custom rule. This is the baseline of hardcoded values to migrate. If the count is high, suggest `swiftlint lint --write-baseline .swiftlint-baseline.json` and adding `--baseline .swiftlint-baseline.json` in `verify.sh`, so only new violations count.
+- Run SwiftLint once on the whole project and report the count per custom rule. This is the baseline of hardcoded values to migrate, and of concurrency escape hatches already in the code (the `concurrency_*` rules: a new one needs `// concurrency: <why it is safe>` on its line). If the count is high, suggest `swiftlint lint --write-baseline .swiftlint-baseline.json` and adding `--baseline .swiftlint-baseline.json` in `verify.sh`, so only new violations count.
 
 ## 6. Architecture contracts (SwiftPM, optional)
 
@@ -106,6 +107,8 @@ Offer it when the app has windows the user resizes. Fill `docs/LAYOUT_CONTRACT.m
 
 Skip items 1-6 for apps without resizable windows; item 7 applies to any app with shared components (it needs `LayoutContract.swift` and `Screenshot.swift` in the test target, not a contract). It can be done later by asking for a layout contract or snapshot tests.
 
+
+**Accessibility audit (any app with a UI test target, macOS 14 or iOS 17 and later).** Offer it: copy `tests/AccessibilityAudit.swift` into the app's UI test target and add one test per main screen that launches the app, opens the screen and calls `try AccessibilityAudit.check(app)`. It runs Apple's `performAccessibilityAudit()`: missing descriptions, contrast, hit areas, clipped text, traits. Without a UI test target, propose creating one in Xcode and let the user do it (a new target edits `project.pbxproj`). Run it once: list the issues found. Each one is fixed or, with the user's agreement, listed as an exception in that test with its reason, never silenced for the whole app. UI tests run in `scripts/verify.sh full`.
 ## 8. Companion plugins
 
 Check `/plugin` state and recommend, without installing on your own:
@@ -118,4 +121,5 @@ Check `/plugin` state and recommend, without installing on your own:
 1. Show the list of created and merged files.
 2. Commit on the setup branch with message `chore: set up swift-harness` only after the user confirms.
 3. Tell the user that the end-of-turn check does not run `verify.command` until they approve it by typing `/swift-harness:approve-verify`, and that it asks again whenever the command or `scripts/verify.sh` changes. Do not run the approval yourself.
-4. Suggest the next step: `/swift-harness:audit` and `/swift-harness:product-map` if the project already has code, otherwise start with the design system skill.
+4. Tell the user that the first session after setup records the app's security settings (entitlements, App Transport Security, signing build settings) as a baseline: from then on a change fails the end-of-turn check until they approve it with `/swift-harness:approve-security`. `/swift-harness:doctor` shows the baseline.
+5. Suggest the next step: `/swift-harness:audit` and `/swift-harness:product-map` if the project already has code, otherwise start with the design system skill.

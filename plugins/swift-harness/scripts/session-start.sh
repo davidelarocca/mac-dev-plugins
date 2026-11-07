@@ -15,6 +15,16 @@ sh_init || exit 0
 
 verify_cmd="$(sh_cfg '.verify.command' 'scripts/verify.sh fast')"
 
+# After a compaction (#10): give Claude the facts the hooks know, which a summary can lose or
+# get wrong, and keep the session baseline as it is. Repository docs stay the source of truth.
+if [ "$(sh_in '.source')" = "compact" ]; then
+  git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1 || exit 0
+  state="$(sh_state_path)"
+  [ -d "$state" ] || exit 0
+  "$(dirname "$0")/checkpoint.sh" "$SH_ROOT" "$state" "$verify_cmd"
+  exit 0
+fi
+
 if git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
   state="$(sh_state_dir)" && {
     fp="$(sh_identity)"
@@ -31,6 +41,20 @@ if git -C "$SH_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     # The snapshot baselines as they were at session start, for snapshot-watch.sh (#9).
     rm -f "$state/snapshots-warned" "$state/snapshots-approved"
     sh_snapshot_list "$(sh_snapshots)" >"$state/snapshots-start"
+    # Protected files as they were at session start, for protected-watch.sh (#11).
+    rm -f "$state/protected-warned" "$state/protected-edited"
+    sh_protected_list >"$state/protected-start"
+    # Where the session started, for the checkpoint after a compaction (#10).
+    git -C "$SH_ROOT" rev-parse HEAD >"$state/session-head" 2>/dev/null || : >"$state/session-head"
+    sh_dirty_list >"$state/session-dirty"
+    # The security settings as they are the first time, the baseline the user can approve (#32).
+    [ "$(sh_cfg '.security.enabled' 'true')" = "true" ] &&
+      "$(dirname "$0")/security.sh" --record --project "$SH_ROOT" >/dev/null 2>&1
+    # The approved security state at session start: an approval made during the session is
+    # shown to the user at the end of the turn (protected-watch.sh), whoever ran it.
+    rm -f "$state/security-start" "$state/security-start-unreviewed" "$state/security-approval-warned"
+    [ -f "$state/security-approved" ] && cp "$state/security-approved" "$state/security-start"
+    [ -f "$state/security-unreviewed" ] && : >"$state/security-start-unreviewed"
     if [ -n "$fp" ] && [ "$fp" = "$(cat "$state/failed" 2>/dev/null)" ]; then
       echo "swift-harness: the last verification ('$verify_cmd') failed on the current code and has not passed since. Treat the project as not verified."
     fi
